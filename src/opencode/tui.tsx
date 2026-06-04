@@ -22,7 +22,7 @@ async function showUsageToast(api: {
     variant: 'info',
     title: 'Grok Build',
     message: formatUsageToastMessage(report),
-    duration: 12_000,
+    duration: 8_000,
   });
 }
 
