@@ -7,7 +7,7 @@ import { sanitizePayload } from '../payload/sanitize.js';
 import { collectGrokShimTools } from './collectGrokTools.js';
 import { GROK_BUILD_PROVIDER_ID, grokBuildProviderConfig, toPluginModels } from './grokModels.js';
 import { grokToolArgSchemas } from './grokToolSchemas.js';
-import { captureRateLimit, loadQuotaCache } from './quota.js';
+
 import { OPENCODE_INSTALLATION_VERSION } from './version.js';
 
 const GROK_BUILD_VERSION = '0.2.16';
@@ -70,14 +70,13 @@ function buildGrokToolDefinitions() {
 }
 
 export const OpenGrokBuildPlugin: Plugin = async (input: PluginInput) => {
-  loadQuotaCache();
-
   return {
     config: async (cfg) => {
       const existing = cfg.provider?.[GROK_BUILD_PROVIDER_ID];
-      if (existing) return;
-      if (!cfg.provider) cfg.provider = {};
-      cfg.provider[GROK_BUILD_PROVIDER_ID] = grokBuildProviderConfig();
+      if (!existing) {
+        if (!cfg.provider) cfg.provider = {};
+        cfg.provider[GROK_BUILD_PROVIDER_ID] = grokBuildProviderConfig();
+      }
     },
 
     provider: {
@@ -164,12 +163,7 @@ export const OpenGrokBuildPlugin: Plugin = async (input: PluginInput) => {
             headers.set('x-xai-token-auth', 'xai-grok-cli');
             headers.set('User-Agent', `opencode/${OPENCODE_INSTALLATION_VERSION}`);
 
-            const response = await fetch(requestInput, { ...init, headers });
-            const modelOverride = headers.get('x-grok-model-override');
-            if (modelOverride) {
-              captureRateLimit(modelOverride, Object.fromEntries(response.headers.entries()));
-            }
-            return response;
+            return fetch(requestInput, { ...init, headers });
           },
         };
       },

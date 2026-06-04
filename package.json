@@ -14,7 +14,8 @@
   "type": "module",
   "main": "./src/opencode/plugin.ts",
   "exports": {
-    ".": "./src/opencode/plugin.ts"
+    ".": "./src/opencode/plugin.ts",
+    "./tui": "./src/opencode/tui.tsx"
   },
   "files": [
     "README.md",
@@ -49,6 +50,15 @@
   "homepage": "https://github.com/kenryu42/open-grok-build#readme",
   "dependencies": {
     "@opencode-ai/plugin": "1.15.13"
+  },
+  "peerDependencies": {
+    "@opencode-ai/plugin": ">=1.15.0",
+    "@opentui/solid": "0.2.16"
+  },
+  "peerDependenciesMeta": {
+    "@opentui/solid": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.16",

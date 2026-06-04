@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { collectGrokShimTools } from '../../src/opencode/collectGrokTools.js';
 import { grokBuildProviderConfig } from '../../src/opencode/grokModels.js';
 import { OpenGrokBuildPlugin } from '../../src/opencode/plugin.js';
+
 import { GROK_SHIM_TOOL_NAMES } from '../../src/tools/register.js';
 
 function testPluginInput() {
@@ -45,5 +46,13 @@ describe('OpenGrokBuildPlugin', () => {
     const hooks = await OpenGrokBuildPlugin(testPluginInput());
     expect(hooks.auth?.provider).toBe('grok-build');
     expect(hooks.auth?.methods?.length).toBeGreaterThan(0);
+  });
+
+  it('does not register grok-build-usage as a server slash command', async () => {
+    const hooks = await OpenGrokBuildPlugin(testPluginInput());
+    const cfg: { command?: Record<string, unknown> } = {};
+    await hooks.config?.(cfg);
+    expect(cfg.command?.['grok-build-usage']).toBeUndefined();
+    expect(hooks['command.execute.before']).toBeUndefined();
   });
 });

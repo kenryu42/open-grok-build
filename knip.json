@@ -1,5 +1,5 @@
 {
-  "entry": ["src/opencode/plugin.ts", "src/opencode/grokModels.ts"],
+  "entry": ["src/opencode/plugin.ts", "src/opencode/grokModels.ts", "src/opencode/tui.tsx"],
   "project": ["**/*.ts", "!**/*.d.ts", "!.release-tools/**"],
-  "ignoreDependencies": ["lint-staged"]
+  "ignoreDependencies": ["lint-staged", "@opentui/solid"]
 }

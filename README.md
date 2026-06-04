@@ -1,11 +1,22 @@
 # open-grok-build
 
-OpenCode plugin for **Grok Build** (`cli-chat-proxy.grok.com`): OAuth, payload sanitization, quota cache, and Cursor-style tool shims. **No WebSearch.**
+OpenCode plugin for **Grok Build** (`cli-chat-proxy.grok.com`): OAuth, payload sanitization, live billing via `/grok-build-usage` (TUI toast, no LLM turn), and Cursor-style tool shims. **No WebSearch.**
 
 ## Install
 
+**Server** (provider, OAuth, tools) — `opencode.json`:
+
 ```json
 {
+  "plugin": ["open-grok-build"]
+}
+```
+
+**TUI** (`/grok-build-usage` toast) — `~/.config/opencode/tui.json` (or project `tui.json`):
+
+```json
+{
+  "$schema": "https://opencode.ai/tui.json",
   "plugin": ["open-grok-build"]
 }
 ```
@@ -21,6 +32,10 @@ Local checkout (absolute path is most reliable):
 **Testing locally:** [docs/LOCAL_OPENCODE_TESTING.md](docs/LOCAL_OPENCODE_TESTING.md)
 
 Connect: `/connect grok-build` → **Grok Build (cli-chat-proxy)** or `GROK_BUILD_OAUTH_TOKEN` + API key method.
+
+Usage: in the OpenCode TUI, `/grok-build-usage` shows billing quota in a toast (no LLM turn, no local cache).
+
+**Important:** the slash is registered by the **TUI** plugin. Listing `open-grok-build` only in `opencode.json` loads the server (models/OAuth) but **will not** show `/grok-build-usage`. Add the same package to `~/.config/opencode/tui.json` (or project `.opencode/tui.json`). Restart the TUI after changes.
 
 ## Tool shims
 

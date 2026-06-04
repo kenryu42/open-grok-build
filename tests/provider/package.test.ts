@@ -6,14 +6,17 @@ const packageJson = JSON.parse(
 );
 
 describe('npm package manifest', () => {
-  it('declares OpenCode plugin entry only', () => {
+  it('declares server and TUI plugin entries', () => {
     expect(packageJson.name).toBe('open-grok-build');
     expect(packageJson.keywords).toContain('opencode-plugin');
     expect(packageJson.main).toBe('./src/opencode/plugin.ts');
-    expect(packageJson.exports).toEqual({ '.': './src/opencode/plugin.ts' });
+    expect(packageJson.exports).toEqual({
+      '.': './src/opencode/plugin.ts',
+      './tui': './src/opencode/tui.tsx',
+    });
     expect(packageJson.dependencies?.['@opencode-ai/plugin']).toBeDefined();
     expect(packageJson.devDependencies?.['@opencode-ai/sdk']).toBeDefined();
-    expect(packageJson.peerDependencies?.['@opencode-ai/plugin']).toBeUndefined();
+    expect(packageJson.peerDependencies?.['@opentui/solid']).toBeDefined();
     expect(packageJson.files).toEqual(['README.md', 'src', 'tsconfig.json']);
   });
 
@@ -47,10 +50,13 @@ describe('repository layout', () => {
   });
 
   it('contains core domain source files', () => {
-    const files = globSync('src/**/*.ts').sort();
+    const files = globSync('src/**/*.{ts,tsx}').sort();
     for (const required of [
       'src/auth/oauth.ts',
+      'src/opencode/billing.ts',
       'src/opencode/plugin.ts',
+      'src/opencode/tui.tsx',
+      'src/opencode/usage.ts',
       'src/tools/register.ts',
     ]) {
       expect(files).toContain(required);
