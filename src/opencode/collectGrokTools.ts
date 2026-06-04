@@ -3,7 +3,7 @@ import type { ShimRegisteredTool } from '../tools/types.js';
 
 export type CollectedGrokTool = Pick<ShimRegisteredTool, 'name' | 'description' | 'execute'>;
 
-export function collectPiGrokTools(): CollectedGrokTool[] {
+export function collectGrokShimTools(): CollectedGrokTool[] {
   const tools: CollectedGrokTool[] = [];
   registerGrokTools({
     registerTool(tool) {

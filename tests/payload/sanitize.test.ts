@@ -149,7 +149,7 @@ describe('payload sanitization', () => {
   });
 
   it('resolves local image paths to data URLs', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'pi-grok-cli-test-'));
+    const dir = mkdtempSync(join(tmpdir(), 'open-grok-build-test-'));
     const imagePath = join(dir, 'sample image.png');
     writeFileSync(imagePath, Buffer.from('png image bytes'));
 
@@ -191,7 +191,7 @@ describe('payload sanitization', () => {
   });
 
   it('resolves .jpg and .jpeg image paths to data URLs', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'pi-grok-cli-test-'));
+    const dir = mkdtempSync(join(tmpdir(), 'open-grok-build-test-'));
     const jpgPath = join(dir, 'photo.jpg');
     const jpegPath = join(dir, 'photo.jpeg');
     writeFileSync(jpgPath, Buffer.from('jpg bytes'));
@@ -245,7 +245,7 @@ describe('payload sanitization', () => {
   });
 
   it('rejects unsupported local image extensions', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'pi-grok-cli-test-'));
+    const dir = mkdtempSync(join(tmpdir(), 'open-grok-build-test-'));
     const gifPath = join(dir, 'animation.gif');
     writeFileSync(gifPath, Buffer.from('gif bytes'));
 
@@ -271,7 +271,7 @@ describe('payload sanitization', () => {
   });
 
   it('resolves file:// protocol image paths', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'pi-grok-cli-test-'));
+    const dir = mkdtempSync(join(tmpdir(), 'open-grok-build-test-'));
     const imagePath = join(dir, 'file-ref.png');
     writeFileSync(imagePath, Buffer.from('file ref png'));
 
@@ -364,7 +364,7 @@ describe('payload sanitization', () => {
   });
 
   it('rejects local image paths outside the workspace', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'pi-grok-cli-test-'));
+    const dir = mkdtempSync(join(tmpdir(), 'open-grok-build-test-'));
     const workspace = join(dir, 'workspace');
     const originalCwd = process.cwd();
     writeFileSync(join(dir, 'secret.png'), Buffer.from('png image bytes'));

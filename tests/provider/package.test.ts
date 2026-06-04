@@ -9,14 +9,11 @@ describe('npm package manifest', () => {
   it('declares OpenCode plugin entry only', () => {
     expect(packageJson.name).toBe('open-grok-build');
     expect(packageJson.keywords).toContain('opencode-plugin');
-    expect(packageJson.keywords).not.toContain('pi-package');
     expect(packageJson.main).toBe('./src/opencode/plugin.ts');
     expect(packageJson.exports).toEqual({ '.': './src/opencode/plugin.ts' });
-    expect(packageJson.pi).toBeUndefined();
     expect(packageJson.dependencies?.['@opencode-ai/plugin']).toBeDefined();
     expect(packageJson.devDependencies?.['@opencode-ai/sdk']).toBeDefined();
     expect(packageJson.peerDependencies?.['@opencode-ai/plugin']).toBeUndefined();
-    expect(packageJson.peerDependencies?.['@earendil-works/pi-ai']).toBeUndefined();
     expect(packageJson.files).toEqual(['README.md', 'src', 'tsconfig.json']);
   });
 
@@ -44,7 +41,7 @@ describe('repository layout', () => {
     expect(existsSync(new URL('../../src/opencode/plugin.ts', import.meta.url))).toBe(true);
   });
 
-  it('does not ship pi provider entry or WebSearch shims', () => {
+  it('does not ship legacy provider entry or WebSearch shims', () => {
     expect(existsSync(new URL('../../src/provider/register.ts', import.meta.url))).toBe(false);
     expect(existsSync(new URL('../../src/tools/webSearch.ts', import.meta.url))).toBe(false);
   });

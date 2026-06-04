@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { collectPiGrokTools } from '../../src/opencode/collectPiTools.js';
+import { collectGrokShimTools } from '../../src/opencode/collectGrokTools.js';
 import { grokCliProviderConfig } from '../../src/opencode/grokModels.js';
 import { OpenGrokBuildPlugin } from '../../src/opencode/plugin.js';
 import { GROK_SHIM_TOOL_NAMES } from '../../src/tools/register.js';
@@ -33,9 +33,9 @@ describe('OpenGrokBuildPlugin', () => {
     expect(toolNames).not.toContain('WebSearch');
   });
 
-  it('collects the same shim tools as the pi registration path', () => {
+  it('collects the same shim tools as registerGrokTools', () => {
     expect(
-      collectPiGrokTools()
+      collectGrokShimTools()
         .map((t) => t.name)
         .sort(),
     ).toEqual([...GROK_SHIM_TOOL_NAMES].sort());

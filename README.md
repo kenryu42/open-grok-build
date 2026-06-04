@@ -30,8 +30,10 @@ Connect: `/connect grok-cli` → **Grok CLI (cli-chat-proxy)** or `GROK_CLI_OAUT
 
 | Variable | Default | Description |
 |---|---|---|
-| `PI_GROK_CLI_BASE_URL` | `https://cli-chat-proxy.grok.com/v1` | API base URL |
-| `PI_GROK_CLI_MODELS` | (catalog) | Comma-separated model IDs |
+| `GROK_CLI_BASE_URL` | `https://cli-chat-proxy.grok.com/v1` | API base URL |
+| `GROK_CLI_MODELS` | (catalog) | Comma-separated model IDs |
+| `GROK_CLI_OAUTH_CLIENT_ID` | (built-in default) | OAuth client id override |
+| `GROK_CLI_CALLBACK_HOST` / `GROK_CLI_CALLBACK_PORT` | `127.0.0.1` / `56122` | OAuth loopback callback |
 | `GROK_CLI_OAUTH_TOKEN` | — | Static token bypass (no refresh) |
 
 ## OpenCode packaging

@@ -4,7 +4,7 @@ import { tool } from '@opencode-ai/plugin/tool';
 import * as oauth from '../auth/oauth.js';
 import { resolveModels } from '../models/catalog.js';
 import { sanitizePayload } from '../payload/sanitize.js';
-import { collectPiGrokTools } from './collectPiTools.js';
+import { collectGrokShimTools } from './collectGrokTools.js';
 import { GROK_CLI_PROVIDER_ID, grokCliProviderConfig, toPluginModels } from './grokModels.js';
 import { grokToolArgSchemas } from './grokToolSchemas.js';
 import { captureRateLimit, loadQuotaCache } from './quota.js';
@@ -14,7 +14,7 @@ const GROK_CLI_VERSION = '0.2.16';
 const OAUTH_DUMMY_KEY = 'opencode-oauth-dummy-key';
 const ACCESS_TOKEN_REFRESH_SKEW_MS = 120_000;
 
-const collectedTools = collectPiGrokTools();
+const collectedTools = collectGrokShimTools();
 
 function accessTokenIsExpiring(
   token: string | undefined,

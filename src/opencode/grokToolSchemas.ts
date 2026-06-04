@@ -1,6 +1,6 @@
 import { tool } from '@opencode-ai/plugin/tool';
 
-/** Zod arg schemas for Cursor/Grok shim tools (execute logic comes from pi tool collectors). */
+/** Zod arg schemas for Cursor/Grok shim tools (execute logic from registerGrokTools). */
 export const grokToolArgSchemas: Record<string, Record<string, unknown>> = {
   Grep: {
     pattern: tool.schema.string().describe('Regex pattern to search for in file contents'),

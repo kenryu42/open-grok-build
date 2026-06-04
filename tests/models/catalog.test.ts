@@ -15,7 +15,7 @@ describe('model catalog', () => {
   });
 
   it('uses fallback models when no override is configured', () => {
-    delete process.env.PI_GROK_CLI_MODELS;
+    delete process.env.GROK_CLI_MODELS;
 
     const models = resolveModels();
 
@@ -36,7 +36,7 @@ describe('model catalog', () => {
   });
 
   it('filters, reorders, and fills unknown model overrides', () => {
-    process.env.PI_GROK_CLI_MODELS = ' custom-model , grok-build ,, grok-4.3 ';
+    process.env.GROK_CLI_MODELS = ' custom-model , grok-build ,, grok-4.3 ';
 
     const models = resolveModels();
 

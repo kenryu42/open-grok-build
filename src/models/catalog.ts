@@ -120,14 +120,14 @@ export function supportsReasoningEffort(modelId: string): boolean {
   return Object.values(model.thinkingLevelMap).some((level) => level !== null && level !== 'none');
 }
 
-// ─── PI_GROK_CLI_MODELS env override ──────────────────────────────────────────
+// ─── GROK_CLI_MODELS env override ───────────────────────────────────────────
 
 /**
- * Resolve the active model list.  If `PI_GROK_CLI_MODELS` is set,
+ * Resolve the active model list.  If `GROK_CLI_MODELS` is set,
  * it filters/reorders the fallback list; unknown IDs get sensible defaults.
  */
 export function resolveModels(): GrokCliModelConfig[] {
-  const env = (process.env.PI_GROK_CLI_MODELS || '')
+  const env = (process.env.GROK_CLI_MODELS || '')
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);

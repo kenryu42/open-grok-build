@@ -13,7 +13,7 @@ import {
 
 describe('shell tool', () => {
   it('returns stdout, stderr, and exit zero details', async () => {
-    const cwd = tempDir('pi-grok-cli-shell-');
+    const cwd = tempDir('open-grok-build-shell-');
     const result = await executeTool(
       collectTools(registerShellTool).get('Shell'),
       { command: 'printf stdout && printf stderr >&2' },
@@ -28,7 +28,7 @@ describe('shell tool', () => {
   });
 
   it('runs commands in a resolved working directory', async () => {
-    const cwd = tempDir('pi-grok-cli-shell-');
+    const cwd = tempDir('open-grok-build-shell-');
     writeFileSync(join(cwd, 'target.txt'), 'from cwd', 'utf-8');
     const result = await executeTool(
       collectTools(registerShellTool).get('Shell'),
@@ -44,7 +44,7 @@ describe('shell tool', () => {
   });
 
   it('returns a clear placeholder when commands produce no output', async () => {
-    const cwd = tempDir('pi-grok-cli-shell-');
+    const cwd = tempDir('open-grok-build-shell-');
     const result = await executeTool(
       collectTools(registerShellTool).get('Shell'),
       { command: 'true' },
@@ -56,7 +56,7 @@ describe('shell tool', () => {
   });
 
   it('includes exit code, error message, and captured output on failure', async () => {
-    const cwd = tempDir('pi-grok-cli-shell-');
+    const cwd = tempDir('open-grok-build-shell-');
     const result = await executeTool(
       collectTools(registerShellTool).get('Shell'),
       { command: 'printf before && printf problem >&2 && exit 7' },
@@ -72,7 +72,7 @@ describe('shell tool', () => {
   });
 
   it('truncates large successful and failed output', async () => {
-    const cwd = tempDir('pi-grok-cli-shell-');
+    const cwd = tempDir('open-grok-build-shell-');
     const tools = collectTools(registerShellTool);
     const largeOutput = "head -c 50001 /dev/zero | tr '\\0' x";
 
@@ -90,7 +90,7 @@ describe('shell tool', () => {
   });
 
   it('truncates multibyte output by characters without hitting exec buffer limits', async () => {
-    const cwd = tempDir('pi-grok-cli-shell-');
+    const cwd = tempDir('open-grok-build-shell-');
     const result = await executeTool(
       collectTools(registerShellTool).get('Shell'),
       { command: 'perl -e \'print "漢" x 50001\'' },
@@ -103,7 +103,7 @@ describe('shell tool', () => {
   });
 
   it('kills commands that exceed the timeout', async () => {
-    const cwd = tempDir('pi-grok-cli-shell-');
+    const cwd = tempDir('open-grok-build-shell-');
     const command = 'node -e "setTimeout(()=>{},10000)"';
     const result = await executeTool(
       collectTools(registerShellTool).get('Shell'),

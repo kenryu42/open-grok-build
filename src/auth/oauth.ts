@@ -4,8 +4,7 @@
  * Uses Web Crypto API (crypto.subtle) for PKCE so the extension is
  * portable across Node versions and potential non-Node runtimes.
  *
- * The OAuth flow is identical to pi-grok — same client_id, same auth.x.ai
- * issuer. The difference is in the API endpoint: this extension targets
+ * xAI issuer (auth.x.ai) with Grok CLI client_id; API traffic uses
  * cli-chat-proxy.grok.com instead of api.x.ai.
  */
 
@@ -17,17 +16,17 @@ import { XaiErrorCode, XaiOAuthError } from '../shared/errors.js';
 const DEFAULT_BASE_URL = 'https://cli-chat-proxy.grok.com/v1';
 const ISSUER = 'https://auth.x.ai';
 const DISCOVERY_URL = `${ISSUER}/.well-known/openid-configuration`;
-const CLIENT_ID = process.env.PI_GROK_CLI_OAUTH_CLIENT_ID || 'b1a00492-073a-47ea-816f-4c329264a828';
+const CLIENT_ID = process.env.GROK_CLI_OAUTH_CLIENT_ID || 'b1a00492-073a-47ea-816f-4c329264a828';
 const SCOPE =
-  process.env.PI_GROK_CLI_OAUTH_SCOPE ||
+  process.env.GROK_CLI_OAUTH_SCOPE ||
   'openid profile email offline_access grok-cli:access api:access';
-const CALLBACK_HOST = process.env.PI_GROK_CLI_CALLBACK_HOST || '127.0.0.1';
-const CALLBACK_PORT = Number.parseInt(process.env.PI_GROK_CLI_CALLBACK_PORT || '56122', 10);
+const CALLBACK_HOST = process.env.GROK_CLI_CALLBACK_HOST || '127.0.0.1';
+const CALLBACK_PORT = Number.parseInt(process.env.GROK_CLI_CALLBACK_PORT || '56122', 10);
 const CALLBACK_PATH = '/callback';
 /** Refresh 120s before actual expiry. */
 const REFRESH_SKEW_MS = 120_000;
 const TOKEN_REQUEST_TIMEOUT_MS = Number.parseInt(
-  process.env.PI_GROK_CLI_TOKEN_TIMEOUT_MS || '30000',
+  process.env.GROK_CLI_TOKEN_TIMEOUT_MS || '30000',
   10,
 );
 
@@ -53,11 +52,7 @@ export interface XaiOAuthCredentials {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 export function getBaseUrl(): string {
-  return (
-    process.env.PI_GROK_CLI_BASE_URL ||
-    process.env.GROK_CLI_BASE_URL ||
-    DEFAULT_BASE_URL
-  ).replace(/\/+$/, '');
+  return (process.env.GROK_CLI_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, '');
 }
 
 function base64Url(buffer: ArrayBuffer | Uint8Array): string {
@@ -461,10 +456,10 @@ export async function beginGrokCliOAuth(
   };
 }
 
-// ─── Login (called by pi's /login flow) ──────────────────────────────────────
+// ─── Programmatic login (browser OAuth) ─────────────────────────────────────
 
 export async function login(callbacks: OAuthLoginCallbacks): Promise<OAuthCredentials> {
-  const session = await beginGrokCliOAuth('pi-grok-cli');
+  const session = await beginGrokCliOAuth('open-grok-build');
   callbacks.onAuth({ url: session.url, instructions: session.instructions });
   return session.finish();
 }

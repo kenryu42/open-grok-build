@@ -50,7 +50,7 @@ function strReplaceWithPreparedArgs(cwd: string, params: Record<string, unknown>
 
 describe('file tools', () => {
   it('lists directory contents including hidden files', async () => {
-    const cwd = tempDir('pi-grok-cli-files-');
+    const cwd = tempDir('open-grok-build-files-');
     writeFileSync(join(cwd, '.hidden'), 'secret', 'utf-8');
     writeFileSync(join(cwd, 'visible.txt'), 'visible', 'utf-8');
 
@@ -62,9 +62,9 @@ describe('file tools', () => {
   });
 
   it('lists directory contents when Unix ls is not on PATH', async () => {
-    const cwd = tempDir('pi-grok-cli-files-');
+    const cwd = tempDir('open-grok-build-files-');
     const oldPath = process.env.PATH;
-    process.env.PATH = tempDir('pi-grok-cli-empty-bin-');
+    process.env.PATH = tempDir('open-grok-build-empty-bin-');
     vi.resetModules();
     writeFileSync(join(cwd, 'visible.txt'), 'visible', 'utf-8');
 
@@ -84,7 +84,7 @@ describe('file tools', () => {
   });
 
   it('reports filesystem errors for invalid file operations', async () => {
-    const cwd = tempDir('pi-grok-cli-files-');
+    const cwd = tempDir('open-grok-build-files-');
     mkdirSync(join(cwd, 'dir'));
     writeFileSync(join(cwd, 'blocked'), 'not a directory', 'utf-8');
     const tools = collectTools(registerFileTools);
@@ -131,7 +131,7 @@ describe('file tools', () => {
   });
 
   it('writes a nested file and reads a requested line window', async () => {
-    const cwd = tempDir('pi-grok-cli-files-');
+    const cwd = tempDir('open-grok-build-files-');
     const tools = collectTools(registerFileTools);
 
     const writeResult = await executeTool(
@@ -162,7 +162,7 @@ describe('file tools', () => {
   });
 
   it('writes Cursor-style contents arguments', async () => {
-    const cwd = tempDir('pi-grok-cli-files-');
+    const cwd = tempDir('open-grok-build-files-');
 
     const result = await executePreparedTool(
       collectTools(registerFileTools).get('Write'),
@@ -179,7 +179,7 @@ describe('file tools', () => {
   });
 
   it('reports UTF-8 bytes written for multibyte content', async () => {
-    const cwd = tempDir('pi-grok-cli-files-');
+    const cwd = tempDir('open-grok-build-files-');
     const result = await executeTool(
       collectTools(registerFileTools).get('Write'),
       { path: 'emoji.txt', content: 'a🙂漢' },
@@ -194,7 +194,7 @@ describe('file tools', () => {
   });
 
   it('honors a zero read limit', async () => {
-    const cwd = tempDir('pi-grok-cli-files-');
+    const cwd = tempDir('open-grok-build-files-');
     writeFileSync(join(cwd, 'notes.txt'), 'alpha\nbeta', 'utf-8');
     const result = await executeTool(
       collectTools(registerFileTools).get('Read'),
@@ -212,7 +212,7 @@ describe('file tools', () => {
   });
 
   it('does not add a blank numbered line for files ending with a newline', async () => {
-    const cwd = tempDir('pi-grok-cli-files-');
+    const cwd = tempDir('open-grok-build-files-');
     writeFileSync(join(cwd, 'notes.txt'), 'alpha\nbeta\n', 'utf-8');
     const result = await executeTool(
       collectTools(registerFileTools).get('Read'),
@@ -228,7 +228,7 @@ describe('file tools', () => {
   });
 
   it('reports missing files without throwing', async () => {
-    const cwd = tempDir('pi-grok-cli-files-');
+    const cwd = tempDir('open-grok-build-files-');
     const result = await executeTool(
       collectTools(registerFileTools).get('Read'),
       { path: 'missing.txt' },
@@ -244,8 +244,8 @@ describe('file tools', () => {
   });
 
   it('rejects paths that escape the workspace', async () => {
-    const cwd = tempDir('pi-grok-cli-files-');
-    const outside = tempDir('pi-grok-cli-files-outside-');
+    const cwd = tempDir('open-grok-build-files-');
+    const outside = tempDir('open-grok-build-files-outside-');
     writeFileSync(join(outside, 'secret.txt'), 'secret', 'utf-8');
     symlinkSync(outside, join(cwd, 'outside'));
 
@@ -279,7 +279,7 @@ describe('file tools', () => {
   });
 
   it('renders read errors for existing paths without claiming the file is missing', async () => {
-    const cwd = tempDir('pi-grok-cli-files-');
+    const cwd = tempDir('open-grok-build-files-');
     mkdirSync(join(cwd, 'dir'));
     const tools = collectTools(registerFileTools);
     const result = await executeTool(tools.get('Read'), { path: 'dir' }, cwd);
@@ -296,7 +296,7 @@ describe('file tools', () => {
   });
 
   it('replaces every exact string occurrence', async () => {
-    const cwd = tempDir('pi-grok-cli-files-');
+    const cwd = tempDir('open-grok-build-files-');
     writeFileSync(join(cwd, 'story.txt'), 'red blue red', 'utf-8');
 
     const result = await strReplace(cwd, 'red', 'green');
@@ -306,7 +306,7 @@ describe('file tools', () => {
   });
 
   it('rejects empty replacement search strings without changing files', async () => {
-    const cwd = tempDir('pi-grok-cli-files-');
+    const cwd = tempDir('open-grok-build-files-');
     writeFileSync(join(cwd, 'story.txt'), 'red blue red', 'utf-8');
 
     const result = await strReplace(cwd, '', 'green');
@@ -316,7 +316,7 @@ describe('file tools', () => {
   });
 
   it('treats replacement text as a literal string', async () => {
-    const cwd = tempDir('pi-grok-cli-files-');
+    const cwd = tempDir('open-grok-build-files-');
     writeFileSync(join(cwd, 'story.txt'), 'abc', 'utf-8');
 
     const result = await strReplace(cwd, 'a', '$&');
@@ -326,7 +326,7 @@ describe('file tools', () => {
   });
 
   it('replaces string occurrences with Grok and Cursor argument variants', async () => {
-    const oldStringCwd = tempDir('pi-grok-cli-files-');
+    const oldStringCwd = tempDir('open-grok-build-files-');
     writeFileSync(join(oldStringCwd, 'story.txt'), 'red blue red', 'utf-8');
 
     const oldStringResult = await strReplaceWithPreparedArgs(oldStringCwd, {
@@ -337,7 +337,7 @@ describe('file tools', () => {
     expect(firstText(oldStringResult)).toBe('Replaced 2 occurrence(s) in story.txt');
     expectStoryState(oldStringResult, oldStringCwd, 2, 'green blue green');
 
-    const oldTextCwd = tempDir('pi-grok-cli-files-');
+    const oldTextCwd = tempDir('open-grok-build-files-');
     writeFileSync(join(oldTextCwd, 'story.txt'), 'red blue red', 'utf-8');
 
     const oldTextResult = await strReplaceWithPreparedArgs(oldTextCwd, {
@@ -348,7 +348,7 @@ describe('file tools', () => {
     expect(firstText(oldTextResult)).toBe('Replaced 2 occurrence(s) in story.txt');
     expectStoryState(oldTextResult, oldTextCwd, 2, 'green blue green');
 
-    const nestedCwd = tempDir('pi-grok-cli-files-');
+    const nestedCwd = tempDir('open-grok-build-files-');
     writeFileSync(join(nestedCwd, 'story.txt'), 'red blue red', 'utf-8');
 
     const nestedResult = await strReplaceWithPreparedArgs(nestedCwd, {
@@ -360,7 +360,7 @@ describe('file tools', () => {
   });
 
   it('edits files with single, multiple, and stringified replacement inputs', async () => {
-    const singleCwd = tempDir('pi-grok-cli-files-');
+    const singleCwd = tempDir('open-grok-build-files-');
     writeFileSync(join(singleCwd, 'story.txt'), 'red blue red', 'utf-8');
 
     const singleResult = await executePreparedTool(
@@ -372,7 +372,7 @@ describe('file tools', () => {
     expect(firstText(singleResult)).toBe('Applied 2 replacement(s) in story.txt');
     expectStoryState(singleResult, singleCwd, 2, 'green blue green');
 
-    const multipleCwd = tempDir('pi-grok-cli-files-');
+    const multipleCwd = tempDir('open-grok-build-files-');
     writeFileSync(join(multipleCwd, 'story.txt'), 'red blue red', 'utf-8');
 
     const multipleResult = await executePreparedTool(
@@ -390,7 +390,7 @@ describe('file tools', () => {
     expect(firstText(multipleResult)).toBe('Applied 3 replacement(s) in story.txt');
     expectStoryState(multipleResult, multipleCwd, 3, 'green yellow green');
 
-    const stringifiedCwd = tempDir('pi-grok-cli-files-');
+    const stringifiedCwd = tempDir('open-grok-build-files-');
     writeFileSync(join(stringifiedCwd, 'story.txt'), 'red blue red', 'utf-8');
 
     const stringifiedResult = await executePreparedTool(
@@ -407,7 +407,7 @@ describe('file tools', () => {
   });
 
   it('edits files with literal replacement text', async () => {
-    const cwd = tempDir('pi-grok-cli-files-');
+    const cwd = tempDir('open-grok-build-files-');
     writeFileSync(join(cwd, 'story.txt'), 'abc', 'utf-8');
 
     const result = await executePreparedTool(
@@ -421,7 +421,7 @@ describe('file tools', () => {
   });
 
   it('rejects empty edit search strings without changing files', async () => {
-    const cwd = tempDir('pi-grok-cli-files-');
+    const cwd = tempDir('open-grok-build-files-');
     writeFileSync(join(cwd, 'story.txt'), 'red blue red', 'utf-8');
 
     const result = await executePreparedTool(
@@ -435,7 +435,7 @@ describe('file tools', () => {
   });
 
   it('reports unsupported edit strategies without changing files', async () => {
-    const cwd = tempDir('pi-grok-cli-files-');
+    const cwd = tempDir('open-grok-build-files-');
     writeFileSync(join(cwd, 'story.txt'), 'red blue red', 'utf-8');
 
     const result = await executePreparedTool(
@@ -451,7 +451,7 @@ describe('file tools', () => {
   });
 
   it('leaves files unchanged when the replacement string is absent', async () => {
-    const cwd = tempDir('pi-grok-cli-files-');
+    const cwd = tempDir('open-grok-build-files-');
     writeFileSync(join(cwd, 'story.txt'), 'red blue red', 'utf-8');
 
     const result = await strReplace(cwd, 'purple', 'green');
@@ -461,7 +461,7 @@ describe('file tools', () => {
   });
 
   it('deletes existing files and reports missing files', async () => {
-    const cwd = tempDir('pi-grok-cli-files-');
+    const cwd = tempDir('open-grok-build-files-');
     writeFileSync(join(cwd, 'remove.txt'), 'delete me', 'utf-8');
     const tools = collectTools(registerFileTools);
 

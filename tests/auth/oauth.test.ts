@@ -37,13 +37,13 @@ afterEach(() => {
 describe('OAuth helpers without network access', () => {
   it('resolves and trims the configured base URL', () => {
     delete process.env.GROK_CLI_BASE_URL;
-    delete process.env.PI_GROK_CLI_BASE_URL;
+    delete process.env.GROK_CLI_BASE_URL;
     expect(getBaseUrl()).toBe('https://cli-chat-proxy.grok.com/v1');
 
     process.env.GROK_CLI_BASE_URL = 'https://example.invalid/v1///';
     expect(getBaseUrl()).toBe('https://example.invalid/v1');
 
-    process.env.PI_GROK_CLI_BASE_URL = 'https://override.invalid/api//';
+    process.env.GROK_CLI_BASE_URL = 'https://override.invalid/api//';
     expect(getBaseUrl()).toBe('https://override.invalid/api');
   });
 
@@ -68,7 +68,7 @@ describe('OAuth helpers without network access', () => {
   it('refreshes credentials with the configured token endpoint', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(1_700_000_000_000);
-    process.env.PI_GROK_CLI_BASE_URL = 'https://proxy.example/v1//';
+    process.env.GROK_CLI_BASE_URL = 'https://proxy.example/v1//';
     const fetchMock = vi.fn<typeof fetch>(async () =>
       Response.json({
         access_token: 'new-access',

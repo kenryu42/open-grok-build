@@ -1,4 +1,4 @@
-// @ts-nocheck — shim tools retain pi-era dynamic params/renderers; runtime-tested via vitest.
+// @ts-nocheck — shim tools use dynamic params/renderers; runtime-tested via vitest.
 import {
   existsSync,
   promises as fs,

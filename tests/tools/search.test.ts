@@ -14,7 +14,7 @@ import {
 } from './toolTestHelpers.js';
 
 function setupProject() {
-  const dir = tempDir('pi-grok-cli-search-');
+  const dir = tempDir('open-grok-build-search-');
   mkdirSync(join(dir, 'src'));
   writeFileSync(join(dir, 'src', 'alpha.ts'), 'needle\nhaystack\n', 'utf-8');
   writeFileSync(join(dir, 'src', 'beta.md'), 'needle in docs\n', 'utf-8');
@@ -38,7 +38,7 @@ function expectGlobResult(cwd: string, result: ToolResult) {
 async function withFindFallbackTools(
   run: (tools: ReturnType<typeof collectTools>) => Promise<void>,
 ) {
-  const bin = tempDir('pi-grok-cli-search-bin-');
+  const bin = tempDir('open-grok-build-search-bin-');
   symlinkSync('/usr/bin/find', join(bin, 'find'));
   const oldPath = process.env.PATH;
   process.env.PATH = bin;
@@ -55,7 +55,7 @@ async function withNoSearchBinaries(
   run: (tools: ReturnType<typeof collectTools>) => Promise<void>,
 ) {
   const oldPath = process.env.PATH;
-  process.env.PATH = tempDir('pi-grok-cli-empty-bin-');
+  process.env.PATH = tempDir('open-grok-build-empty-bin-');
   vi.resetModules();
   try {
     await run(collectTools((await import('../../src/tools/search.js')).registerSearchTools));

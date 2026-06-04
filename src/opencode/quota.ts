@@ -17,7 +17,7 @@ interface RateLimitInfo {
 const cachedRateLimits = new Map<string, RateLimitInfo>();
 
 function quotaCachePath() {
-  return join(homedir(), '.pi', QUOTA_CACHE_FILE);
+  return join(homedir(), '.config', 'opencode', QUOTA_CACHE_FILE);
 }
 
 function isRateLimitInfo(value: unknown): value is RateLimitInfo {
