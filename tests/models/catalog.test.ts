@@ -10,12 +10,12 @@ afterEach(() => {
 describe('model catalog', () => {
   it('reports reasoning-effort support by normalized model name', () => {
     expect(supportsReasoningEffort('grok-4.3')).toBe(true);
-    expect(supportsReasoningEffort('grok-cli/GROK-COMPOSER-2.5-fast')).toBe(false);
+    expect(supportsReasoningEffort('grok-build/GROK-COMPOSER-2.5-fast')).toBe(false);
     expect(supportsReasoningEffort('grok-4.20-0309-non-reasoning')).toBe(false);
   });
 
   it('uses fallback models when no override is configured', () => {
-    delete process.env.GROK_CLI_MODELS;
+    delete process.env.GROK_BUILD_MODELS;
 
     const models = resolveModels();
 
@@ -36,7 +36,7 @@ describe('model catalog', () => {
   });
 
   it('filters, reorders, and fills unknown model overrides', () => {
-    process.env.GROK_CLI_MODELS = ' custom-model , grok-build ,, grok-4.3 ';
+    process.env.GROK_BUILD_MODELS = ' custom-model , grok-build ,, grok-4.3 ';
 
     const models = resolveModels();
 

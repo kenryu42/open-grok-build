@@ -1,13 +1,13 @@
 {
   "name": "open-grok-build",
   "version": "0.1.0",
-  "description": "OpenCode plugin for Grok CLI API (OAuth, sanitization, Cursor tool shims).",
+  "description": "OpenCode plugin for Grok Build API (OAuth, sanitization, Cursor tool shims).",
   "keywords": [
     "opencode",
     "opencode-plugin",
     "xai",
     "grok",
-    "grok-cli",
+    "grok-build",
     "oauth",
     "xai-oauth"
   ],

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { collectGrokShimTools } from '../../src/opencode/collectGrokTools.js';
-import { grokCliProviderConfig } from '../../src/opencode/grokModels.js';
+import { grokBuildProviderConfig } from '../../src/opencode/grokModels.js';
 import { OpenGrokBuildPlugin } from '../../src/opencode/plugin.js';
 import { GROK_SHIM_TOOL_NAMES } from '../../src/tools/register.js';
 
@@ -17,14 +17,14 @@ function testPluginInput() {
 }
 
 describe('OpenGrokBuildPlugin', () => {
-  it('registers grok-cli provider config and Cursor shim tools', async () => {
+  it('registers grok-build provider config and Cursor shim tools', async () => {
     const hooks = await OpenGrokBuildPlugin(testPluginInput());
 
     const cfg: { provider?: Record<string, unknown> } = {};
     await hooks.config?.(cfg);
-    expect(cfg.provider?.['grok-cli']).toBeDefined();
+    expect(cfg.provider?.['grok-build']).toBeDefined();
 
-    const providerCfg = grokCliProviderConfig();
+    const providerCfg = grokBuildProviderConfig();
     expect(providerCfg.api).toBe('https://cli-chat-proxy.grok.com/v1');
     expect(Object.keys(providerCfg.models)).toContain('grok-build');
 
@@ -41,9 +41,9 @@ describe('OpenGrokBuildPlugin', () => {
     ).toEqual([...GROK_SHIM_TOOL_NAMES].sort());
   });
 
-  it('exposes grok-cli OAuth auth hook', async () => {
+  it('exposes grok-build OAuth auth hook', async () => {
     const hooks = await OpenGrokBuildPlugin(testPluginInput());
-    expect(hooks.auth?.provider).toBe('grok-cli');
+    expect(hooks.auth?.provider).toBe('grok-build');
     expect(hooks.auth?.methods?.length).toBeGreaterThan(0);
   });
 });

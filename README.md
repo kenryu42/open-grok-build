@@ -1,6 +1,6 @@
 # open-grok-build
 
-OpenCode plugin for **Grok CLI** (`cli-chat-proxy.grok.com`): OAuth, payload sanitization, quota cache, and Cursor-style tool shims. **No WebSearch.**
+OpenCode plugin for **Grok Build** (`cli-chat-proxy.grok.com`): OAuth, payload sanitization, quota cache, and Cursor-style tool shims. **No WebSearch.**
 
 ## Install
 
@@ -20,7 +20,7 @@ Local checkout (absolute path is most reliable):
 
 **Testing locally:** [docs/LOCAL_OPENCODE_TESTING.md](docs/LOCAL_OPENCODE_TESTING.md)
 
-Connect: `/connect grok-cli` → **Grok CLI (cli-chat-proxy)** or `GROK_CLI_OAUTH_TOKEN` + API key method.
+Connect: `/connect grok-build` → **Grok Build (cli-chat-proxy)** or `GROK_BUILD_OAUTH_TOKEN` + API key method.
 
 ## Tool shims
 
@@ -30,11 +30,11 @@ Connect: `/connect grok-cli` → **Grok CLI (cli-chat-proxy)** or `GROK_CLI_OAUT
 
 | Variable | Default | Description |
 |---|---|---|
-| `GROK_CLI_BASE_URL` | `https://cli-chat-proxy.grok.com/v1` | API base URL |
-| `GROK_CLI_MODELS` | (catalog) | Comma-separated model IDs |
-| `GROK_CLI_OAUTH_CLIENT_ID` | (built-in default) | OAuth client id override |
-| `GROK_CLI_CALLBACK_HOST` / `GROK_CLI_CALLBACK_PORT` | `127.0.0.1` / `56122` | OAuth loopback callback |
-| `GROK_CLI_OAUTH_TOKEN` | — | Static token bypass (no refresh) |
+| `GROK_BUILD_BASE_URL` | `https://cli-chat-proxy.grok.com/v1` | API base URL |
+| `GROK_BUILD_MODELS` | (catalog) | Comma-separated model IDs |
+| `GROK_BUILD_OAUTH_CLIENT_ID` | (built-in default) | OAuth client id override |
+| `GROK_BUILD_CALLBACK_HOST` / `GROK_BUILD_CALLBACK_PORT` | `127.0.0.1` / `56122` | OAuth loopback callback |
+| `GROK_BUILD_OAUTH_TOKEN` | — | Static token bypass (no refresh) |
 
 ## OpenCode packaging
 

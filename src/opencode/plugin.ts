@@ -5,12 +5,12 @@ import * as oauth from '../auth/oauth.js';
 import { resolveModels } from '../models/catalog.js';
 import { sanitizePayload } from '../payload/sanitize.js';
 import { collectGrokShimTools } from './collectGrokTools.js';
-import { GROK_CLI_PROVIDER_ID, grokCliProviderConfig, toPluginModels } from './grokModels.js';
+import { GROK_BUILD_PROVIDER_ID, grokBuildProviderConfig, toPluginModels } from './grokModels.js';
 import { grokToolArgSchemas } from './grokToolSchemas.js';
 import { captureRateLimit, loadQuotaCache } from './quota.js';
 import { OPENCODE_INSTALLATION_VERSION } from './version.js';
 
-const GROK_CLI_VERSION = '0.2.16';
+const GROK_BUILD_VERSION = '0.2.16';
 const OAUTH_DUMMY_KEY = 'opencode-oauth-dummy-key';
 const ACCESS_TOKEN_REFRESH_SKEW_MS = 120_000;
 
@@ -34,8 +34,8 @@ function accessTokenIsExpiring(
   }
 }
 
-function isGrokCliModel(model: { providerID: string }) {
-  return model.providerID === GROK_CLI_PROVIDER_ID;
+function isGrokBuildModel(model: { providerID: string }) {
+  return model.providerID === GROK_BUILD_PROVIDER_ID;
 }
 
 function buildGrokToolDefinitions() {
@@ -74,21 +74,21 @@ export const OpenGrokBuildPlugin: Plugin = async (input: PluginInput) => {
 
   return {
     config: async (cfg) => {
-      const existing = cfg.provider?.[GROK_CLI_PROVIDER_ID];
+      const existing = cfg.provider?.[GROK_BUILD_PROVIDER_ID];
       if (existing) return;
       if (!cfg.provider) cfg.provider = {};
-      cfg.provider[GROK_CLI_PROVIDER_ID] = grokCliProviderConfig();
+      cfg.provider[GROK_BUILD_PROVIDER_ID] = grokBuildProviderConfig();
     },
 
     provider: {
-      id: GROK_CLI_PROVIDER_ID,
+      id: GROK_BUILD_PROVIDER_ID,
       async models(provider, _ctx) {
         return toPluginModels(provider.models, resolveModels());
       },
     },
 
     auth: {
-      provider: GROK_CLI_PROVIDER_ID,
+      provider: GROK_BUILD_PROVIDER_ID,
       async loader(getAuth) {
         const auth = await getAuth();
         if (auth.type !== 'oauth') return {};
@@ -121,7 +121,7 @@ export const OpenGrokBuildPlugin: Plugin = async (input: PluginInput) => {
                     const expires = tokens.expires;
                     await input.client.auth
                       .set({
-                        path: { id: GROK_CLI_PROVIDER_ID },
+                        path: { id: GROK_BUILD_PROVIDER_ID },
                         body: {
                           type: 'oauth',
                           access: tokens.access,
@@ -159,8 +159,8 @@ export const OpenGrokBuildPlugin: Plugin = async (input: PluginInput) => {
               }
             }
             headers.set('authorization', `Bearer ${currentAuth.access}`);
-            headers.set('x-grok-client-identifier', 'open-grok-build');
-            headers.set('x-grok-client-version', GROK_CLI_VERSION);
+            headers.set('x-grok-client-identifier', 'grok-shell');
+            headers.set('x-grok-client-version', GROK_BUILD_VERSION);
             headers.set('x-xai-token-auth', 'xai-grok-cli');
             headers.set('User-Agent', `opencode/${OPENCODE_INSTALLATION_VERSION}`);
 
@@ -175,10 +175,10 @@ export const OpenGrokBuildPlugin: Plugin = async (input: PluginInput) => {
       },
       methods: [
         {
-          label: 'Grok CLI (cli-chat-proxy)',
+          label: 'Grok Build (cli-chat-proxy)',
           type: 'oauth',
           authorize: async () => {
-            const session = await oauth.beginGrokCliOAuth('open-grok-build');
+            const session = await oauth.beginGrokBuildOAuth('open-grok-build');
             return {
               url: session.url,
               instructions: session.instructions,
@@ -200,16 +200,16 @@ export const OpenGrokBuildPlugin: Plugin = async (input: PluginInput) => {
           },
         },
         {
-          label: 'Grok CLI token bypass (GROK_CLI_OAUTH_TOKEN)',
+          label: 'Grok Build token bypass (GROK_BUILD_OAUTH_TOKEN)',
           type: 'api',
         },
       ],
     },
 
     'chat.headers': async (chatInput, output) => {
-      if (!isGrokCliModel(chatInput.model)) return;
+      if (!isGrokBuildModel(chatInput.model)) return;
       output.headers['x-grok-client-identifier'] = 'open-grok-build';
-      output.headers['x-grok-client-version'] = GROK_CLI_VERSION;
+      output.headers['x-grok-client-version'] = GROK_BUILD_VERSION;
       output.headers['x-xai-token-auth'] = 'xai-grok-cli';
       output.headers['x-grok-model-override'] = chatInput.model.id;
       output.headers['x-grok-conv-id'] = chatInput.sessionID;
@@ -217,7 +217,7 @@ export const OpenGrokBuildPlugin: Plugin = async (input: PluginInput) => {
     },
 
     'chat.params': async (chatInput, output) => {
-      if (!isGrokCliModel(chatInput.model)) return;
+      if (!isGrokBuildModel(chatInput.model)) return;
       const cwd = input.directory;
       const sanitized = sanitizePayload(
         { ...output.options },

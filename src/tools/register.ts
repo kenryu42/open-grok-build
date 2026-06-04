@@ -3,7 +3,7 @@ import { registerSearchTools } from './search.js';
 import { registerShellTool } from './shell.js';
 import type { ToolRegistrar } from './types.js';
 
-/** Grok/Cursor shims registered for Grok CLI models. */
+/** Grok/Cursor shims registered for Grok Build models. */
 export const GROK_SHIM_TOOL_NAMES = [
   'Grep',
   'Glob',

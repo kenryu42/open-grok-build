@@ -14,7 +14,7 @@
  *   - xAI uses `prompt_cache_key` for conversation caching.
  *   - xAI doesn't support `prompt_cache_retention`.
  *
- * Additional Grok CLI-specific behavior:
+ * Additional Grok Build-specific behavior:
  *   - Adds x-grok-* headers for client identification
  *   - Uses prompt_cache_key for session affinity
  */

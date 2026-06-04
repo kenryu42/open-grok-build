@@ -4,7 +4,7 @@
  * Uses Web Crypto API (crypto.subtle) for PKCE so the extension is
  * portable across Node versions and potential non-Node runtimes.
  *
- * xAI issuer (auth.x.ai) with Grok CLI client_id; API traffic uses
+ * xAI issuer (auth.x.ai) with Grok Build client_id; API traffic uses
  * cli-chat-proxy.grok.com instead of api.x.ai.
  */
 
@@ -16,17 +16,17 @@ import { XaiErrorCode, XaiOAuthError } from '../shared/errors.js';
 const DEFAULT_BASE_URL = 'https://cli-chat-proxy.grok.com/v1';
 const ISSUER = 'https://auth.x.ai';
 const DISCOVERY_URL = `${ISSUER}/.well-known/openid-configuration`;
-const CLIENT_ID = process.env.GROK_CLI_OAUTH_CLIENT_ID || 'b1a00492-073a-47ea-816f-4c329264a828';
+const CLIENT_ID = process.env.GROK_BUILD_OAUTH_CLIENT_ID || 'b1a00492-073a-47ea-816f-4c329264a828';
 const SCOPE =
-  process.env.GROK_CLI_OAUTH_SCOPE ||
+  process.env.GROK_BUILD_OAUTH_SCOPE ||
   'openid profile email offline_access grok-cli:access api:access';
-const CALLBACK_HOST = process.env.GROK_CLI_CALLBACK_HOST || '127.0.0.1';
-const CALLBACK_PORT = Number.parseInt(process.env.GROK_CLI_CALLBACK_PORT || '56122', 10);
+const CALLBACK_HOST = process.env.GROK_BUILD_CALLBACK_HOST || '127.0.0.1';
+const CALLBACK_PORT = Number.parseInt(process.env.GROK_BUILD_CALLBACK_PORT || '56122', 10);
 const CALLBACK_PATH = '/callback';
 /** Refresh 120s before actual expiry. */
 const REFRESH_SKEW_MS = 120_000;
 const TOKEN_REQUEST_TIMEOUT_MS = Number.parseInt(
-  process.env.GROK_CLI_TOKEN_TIMEOUT_MS || '30000',
+  process.env.GROK_BUILD_TOKEN_TIMEOUT_MS || '30000',
   10,
 );
 
@@ -52,7 +52,7 @@ export interface XaiOAuthCredentials {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 export function getBaseUrl(): string {
-  return (process.env.GROK_CLI_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, '');
+  return (process.env.GROK_BUILD_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, '');
 }
 
 function base64Url(buffer: ArrayBuffer | Uint8Array): string {
@@ -385,16 +385,16 @@ export type OAuthLoginCallbacks = {
   onSuccess?: () => void;
 };
 
-export type GrokCliOAuthSession = {
+export type GrokBuildOAuthSession = {
   url: string;
   instructions: string;
   finish: () => Promise<OAuthCredentials>;
 };
 
 /** Start loopback OAuth; call `finish` after the user completes the browser step. */
-export async function beginGrokCliOAuth(
+export async function beginGrokBuildOAuth(
   referrer = 'open-grok-build',
-): Promise<GrokCliOAuthSession> {
+): Promise<GrokBuildOAuthSession> {
   const discovery = await discover();
   const { verifier, challenge } = await generatePKCE();
   const state = base64Url(crypto.getRandomValues(new Uint8Array(16)));
@@ -415,7 +415,7 @@ export async function beginGrokCliOAuth(
 
   return {
     url: authUrl.toString(),
-    instructions: `Authorize xAI for Grok CLI, then return to OpenCode. Callback: ${callback.redirectUri}`,
+    instructions: `Authorize xAI for Grok Build, then return to OpenCode. Callback: ${callback.redirectUri}`,
     finish: async () => {
       try {
         const result = await callback.waitForCallback(180_000);
@@ -459,7 +459,7 @@ export async function beginGrokCliOAuth(
 // ─── Programmatic login (browser OAuth) ─────────────────────────────────────
 
 export async function login(callbacks: OAuthLoginCallbacks): Promise<OAuthCredentials> {
-  const session = await beginGrokCliOAuth('open-grok-build');
+  const session = await beginGrokBuildOAuth('open-grok-build');
   callbacks.onAuth({ url: session.url, instructions: session.instructions });
   return session.finish();
 }

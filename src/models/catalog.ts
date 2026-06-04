@@ -1,5 +1,5 @@
 /**
- * Model definitions for Grok CLI's API.
+ * Model definitions for Grok Build's API.
  */
 
 // ─── Cost constants ($/M tokens) ──────────────────────────────────────────────
@@ -11,7 +11,7 @@ const COST_420 = { input: 2, output: 6, cacheRead: 0.2, cacheWrite: 0 };
 
 // ─── Model type ───────────────────────────────────────────────────────────────
 
-export interface GrokCliModelConfig {
+export interface GrokBuildModelConfig {
   id: string;
   name: string;
   reasoning: boolean;
@@ -30,13 +30,13 @@ export interface GrokCliModelConfig {
 
 // ─── Hardcoded fallback catalog ───────────────────────────────────────────────
 //
-// These are the models observed via the Grok CLI's /v1/models endpoint and
+// These are the models observed via the Grok Build /v1/models endpoint and
 // the actual traffic captured through cli-chat-proxy.grok.com.
 
-const FALLBACK_MODELS: GrokCliModelConfig[] = [
+const FALLBACK_MODELS: GrokBuildModelConfig[] = [
   {
     id: 'grok-composer-2.5-fast',
-    name: 'Composer 2.5 Fast (Grok CLI)',
+    name: 'Composer 2.5 Fast (Grok Build)',
     reasoning: false,
     input: ['text', 'image'],
     cost: COST_COMPOSER_FAST,
@@ -120,14 +120,14 @@ export function supportsReasoningEffort(modelId: string): boolean {
   return Object.values(model.thinkingLevelMap).some((level) => level !== null && level !== 'none');
 }
 
-// ─── GROK_CLI_MODELS env override ───────────────────────────────────────────
+// ─── GROK_BUILD_MODELS env override ───────────────────────────────────────────
 
 /**
- * Resolve the active model list.  If `GROK_CLI_MODELS` is set,
+ * Resolve the active model list.  If `GROK_BUILD_MODELS` is set,
  * it filters/reorders the fallback list; unknown IDs get sensible defaults.
  */
-export function resolveModels(): GrokCliModelConfig[] {
-  const env = (process.env.GROK_CLI_MODELS || '')
+export function resolveModels(): GrokBuildModelConfig[] {
+  const env = (process.env.GROK_BUILD_MODELS || '')
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);

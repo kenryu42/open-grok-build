@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-const QUOTA_CACHE_FILE = 'grok-cli-quota.json';
+const QUOTA_CACHE_FILE = 'grok-build-quota.json';
 
 interface RateLimitInfo {
   remainingRequests: number;

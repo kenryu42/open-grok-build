@@ -1,13 +1,13 @@
-// @ts-nocheck — catalog fields extend SDK Model shape for grok-cli provider config.
+// @ts-nocheck — catalog fields extend SDK Model shape for grok-build provider config.
 import type { Model as ModelV2 } from '@opencode-ai/sdk/v2';
-import { type GrokCliModelConfig, resolveModels } from '../models/catalog.js';
+import { type GrokBuildModelConfig, resolveModels } from '../models/catalog.js';
 
-export const GROK_CLI_PROVIDER_ID = 'grok-cli';
+export const GROK_BUILD_PROVIDER_ID = 'grok-build';
 
-export function grokCliProviderConfig() {
+export function grokBuildProviderConfig() {
   const models = resolveModels();
   return {
-    name: 'Grok CLI',
+    name: 'Grok Build',
     npm: '@ai-sdk/openai-compatible',
     api: 'https://cli-chat-proxy.grok.com/v1',
     models: Object.fromEntries(
@@ -34,7 +34,7 @@ export function grokCliProviderConfig() {
 
 export function toPluginModels(
   providerModels: Record<string, ModelV2>,
-  catalog: GrokCliModelConfig[],
+  catalog: GrokBuildModelConfig[],
 ): Record<string, ModelV2> {
   const byId = new Map(catalog.map((m) => [m.id, m]));
   const result: Record<string, ModelV2> = {};
