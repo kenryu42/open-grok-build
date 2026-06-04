@@ -1,0 +1,5 @@
+{
+  "entry": ["src/opencode/plugin.ts", "src/opencode/grokModels.ts"],
+  "project": ["**/*.ts", "!**/*.d.ts", "!.release-tools/**"],
+  "ignoreDependencies": ["lint-staged"]
+}
