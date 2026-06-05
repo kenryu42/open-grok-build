@@ -1,7 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { resolveModels } from '../models/catalog.js';
 import { fetchBillingUsage, formatQuota } from './billing.js';
 import { GROK_BUILD_PROVIDER_ID } from './grokModels.js';
 
@@ -59,24 +58,11 @@ export function resolveGrokBuildAccessToken(): string | undefined {
 }
 
 export async function buildGrokBuildUsageReport(): Promise<string[]> {
-  const lines: string[] = ['Grok Build'];
+  const lines: string[] = [];
 
   if (process.env.GROK_BUILD_OAUTH_TOKEN) {
     lines.push('  ⚠️  Using GROK_BUILD_OAUTH_TOKEN env bypass — no auto-refresh available');
   }
-
-  const models = resolveModels();
-  if (models.length === 0) {
-    lines.push('  No models in catalog.');
-    return lines;
-  }
-
-  const modelNames = models
-    .slice(0, 5)
-    .map((model) => model.id)
-    .join(', ');
-  const suffix = models.length > 5 ? ` (+${models.length - 5} more)` : '';
-  lines.push(`  ${models.length} models available (${modelNames}${suffix})`);
 
   const token = resolveGrokBuildAccessToken();
   if (!token) {

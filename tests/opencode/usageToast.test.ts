@@ -7,10 +7,14 @@ import {
 } from '../../src/opencode/usageToast.js';
 
 describe('usage toast helpers', () => {
-  it('joins report lines for toast message', () => {
-    expect(formatUsageToastMessage(['Grok Build', '  10 / 100 credits used'])).toBe(
-      'Grok Build\n  10 / 100 credits used',
-    );
+  it('joins report lines without duplicating the toast title', () => {
+    expect(
+      formatUsageToastMessage([
+        '  Usage:',
+        '    10 / 100 credits used (10%)',
+        '    90 credits remaining',
+      ]),
+    ).toBe('  Usage:\n    10 / 100 credits used (10%)\n    90 credits remaining');
   });
 
   it('uses grok-build-usage slash name consistent with command id', () => {
