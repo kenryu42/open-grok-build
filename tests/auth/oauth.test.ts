@@ -92,7 +92,7 @@ describe('OAuth helpers without network access', () => {
     ).resolves.toMatchObject({
       access: 'new-access',
       refresh: 'new-refresh',
-      expires: 1_700_000_480_000,
+      expires: 1_700_000_600_000,
       tokenEndpoint: 'https://auth.x.ai/oauth/token',
       idToken: 'new-id',
       tokenType: 'DPoP',
@@ -298,7 +298,7 @@ describe('OAuth helpers without network access', () => {
     ).resolves.toMatchObject({
       access: 'login-access',
       refresh: 'login-refresh',
-      expires: 1_700_000_780_000,
+      expires: 1_700_000_900_000,
       tokenEndpoint: 'https://auth.x.ai/oauth/token',
       discovery: discoveryDocument,
       idToken: 'login-id',

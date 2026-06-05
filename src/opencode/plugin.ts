@@ -16,22 +16,14 @@ const ACCESS_TOKEN_REFRESH_SKEW_MS = 120_000;
 
 const collectedTools = collectGrokShimTools();
 
-function accessTokenIsExpiring(
-  token: string | undefined,
-  skewMs = ACCESS_TOKEN_REFRESH_SKEW_MS,
-): boolean {
-  if (!token || typeof token !== 'string') return false;
-  const parts = token.split('.');
-  if (parts.length < 2) return false;
-  try {
-    let payload = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-    while (payload.length % 4 !== 0) payload += '=';
-    const claims = JSON.parse(Buffer.from(payload, 'base64').toString('utf8'));
-    if (typeof claims?.exp !== 'number') return false;
-    return claims.exp * 1000 <= Date.now() + Math.max(0, skewMs);
-  } catch {
-    return false;
-  }
+/**
+ * Checks the stored expiry timestamp against an early-refresh threshold.
+ * Replaces the old JWT-decoding check — the stored `expires` from oauth.ts
+ * is authoritative and already accounts for the server `expires_in` response.
+ */
+function tokenIsExpiring(expires: number | undefined, skewMs: number): boolean {
+  if (typeof expires !== 'number' || !Number.isFinite(expires)) return true;
+  return expires - Date.now() <= skewMs;
 }
 
 function isGrokBuildModel(model: { providerID: string }) {
@@ -93,7 +85,7 @@ export const OpenGrokBuildPlugin: Plugin = async (input: PluginInput) => {
         if (auth.type !== 'oauth') return {};
 
         let refreshPromise:
-          | Promise<{ access: string; refresh: string; expires: number }>
+          | Promise<{ access: string; refresh: string; expires: number; tokenEndpoint?: string }>
           | undefined;
 
         return {
@@ -102,22 +94,24 @@ export const OpenGrokBuildPlugin: Plugin = async (input: PluginInput) => {
             let currentAuth = await getAuth();
             if (currentAuth.type !== 'oauth') return fetch(requestInput, init);
 
-            const expiresSoon =
-              !currentAuth.expires ||
-              currentAuth.expires - Date.now() <= ACCESS_TOKEN_REFRESH_SKEW_MS ||
-              accessTokenIsExpiring(currentAuth.access);
+            const expiresSoon = tokenIsExpiring(currentAuth.expires, ACCESS_TOKEN_REFRESH_SKEW_MS);
 
             if (expiresSoon) {
               if (!refreshPromise) {
                 const refreshToken = currentAuth.refresh;
+                const savedEndpoint = currentAuth.tokenEndpoint as string | undefined;
                 refreshPromise = oauth
                   .refresh({
                     access: currentAuth.access,
                     refresh: refreshToken,
                     expires: currentAuth.expires ?? 0,
+                    ...(savedEndpoint ? { tokenEndpoint: savedEndpoint } : {}),
                   })
                   .then(async (tokens) => {
                     const expires = tokens.expires;
+                    const tokenEndpoint = (tokens as Record<string, unknown>).tokenEndpoint as
+                      | string
+                      | undefined;
                     await input.client.auth
                       .set({
                         path: { id: GROK_BUILD_PROVIDER_ID },
@@ -126,6 +120,7 @@ export const OpenGrokBuildPlugin: Plugin = async (input: PluginInput) => {
                           access: tokens.access,
                           refresh: tokens.refresh,
                           expires,
+                          ...(tokenEndpoint ? { tokenEndpoint } : {}),
                         },
                       })
                       .catch(() => undefined);
@@ -133,6 +128,7 @@ export const OpenGrokBuildPlugin: Plugin = async (input: PluginInput) => {
                       access: tokens.access,
                       refresh: tokens.refresh,
                       expires,
+                      tokenEndpoint,
                     };
                   })
                   .finally(() => {
@@ -185,6 +181,9 @@ export const OpenGrokBuildPlugin: Plugin = async (input: PluginInput) => {
                     refresh: credentials.refresh,
                     access: credentials.access,
                     expires: credentials.expires,
+                    tokenEndpoint: (credentials as Record<string, unknown>).tokenEndpoint as
+                      | string
+                      | undefined,
                   };
                 } catch {
                   return { type: 'failed' as const };
