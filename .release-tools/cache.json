@@ -1,0 +1,17 @@
+{
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "knip": "knip --production",
+    "lint": "biome check --write .",
+    "lint:ci": "biome ci .",
+    "check-duplicates": "bunx jscpd src tests --exitCode 1 --reporters ai --noTips",
+    "check": "bun run lint && bun run typecheck && bun run knip && bun run check-duplicates && AGENT=1 bun run coverage",
+    "check:ci": "bun run lint:ci && bun run typecheck && bun run knip && bun run check-duplicates && AGENT=1 bun run coverage",
+    "prepare": "husky"
+  },
+  "lintStaged": {
+    "*": ["biome check --write --no-errors-on-unmatched"]
+  },
+  "tsconfig": "{\n  \"compilerOptions\": {\n    \"target\": \"ES2022\",\n    \"module\": \"ES2022\",\n    \"moduleResolution\": \"bundler\",\n    \"strict\": true,\n    \"esModuleInterop\": true,\n    \"skipLibCheck\": true,\n    \"forceConsistentCasingInFileNames\": true,\n    \"resolveJsonModule\": true,\n    \"jsx\": \"preserve\",\n    \"jsxImportSource\": \"@opentui/solid\",\n    \"types\": [\"node\"],\n    \"declaration\": true,\n    \"declarationMap\": true,\n    \"sourceMap\": true,\n    \"outDir\": \"./dist\"\n  },\n  \"include\": [\"src/**/*.ts\", \"src/**/*.tsx\"],\n  \"exclude\": [\"node_modules\", \"dist\"]\n}\n",
+  "installedDeps": []
+}

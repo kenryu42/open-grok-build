@@ -31,7 +31,7 @@
     "lint": "biome check --write .",
     "lint:ci": "biome ci .",
     "check": "bun run lint && bun run typecheck && bun run knip && bun run check-duplicates && AGENT=1 bun run coverage",
-    "check:ci": "bun run lint:ci && bun run typecheck && bun run knip && bun run check-duplicates && AGENT=1 bun run coverage",
+    "check:ci": "bun run lint:ci && bun run typecheck && bun run knip && bun run check-duplicates && AGENT=1 bun run converage",
     "prepare": "husky",
     "check-duplicates": "bunx jscpd src tests --exitCode 1 --reporters ai --noTips"
   },
