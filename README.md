@@ -1,5 +1,10 @@
 # open-grok-build
 
+[![CI](https://github.com/kenryu42/open-grok-build/actions/workflows/ci.yml/badge.svg)](https://github.com/kenryu42/open-grok-build/actions/workflows/ci.yml)
+[![Version](https://img.shields.io/github/v/tag/kenryu42/open-grok-build?label=version&color=blue)](https://github.com/kenryu42/open-grok-build)
+[![License: MIT](https://img.shields.io/badge/License-MIT-red.svg)](https://opensource.org/licenses/MIT)
+
+
 [OpenCode](https://opencode.ai) plugin that connects xAI's **Grok Build** models (`cli-chat-proxy.grok.com`) to your terminal. Ships OAuth 2.0 + PKCE authentication, a curated model catalog, payload sanitization for xAI API quirks, Cursor-style tool shims, and live billing queries — all as a drop-in plugin.
 
 ## Features
