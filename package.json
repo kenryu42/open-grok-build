@@ -48,9 +48,6 @@
     "url": "https://github.com/kenryu42/open-grok-build/issues"
   },
   "homepage": "https://github.com/kenryu42/open-grok-build#readme",
-  "dependencies": {
-    "@opencode-ai/plugin": "1.15.13"
-  },
   "peerDependencies": {
     "@opencode-ai/plugin": ">=1.15.0",
     "@opentui/solid": "0.2.16"
@@ -62,6 +59,9 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.16",
+    "@opencode-ai/plugin": "1.15.13",
+    "@opencode-ai/sdk": "1.15.13",
+    "@types/node": "^22.0.0",
     "@vitest/coverage-v8": "^4.1.8",
     "husky": "^9.1.7",
     "jscpd": "^4.2.4",
@@ -69,9 +69,7 @@
     "lint-staged": "^17.0.7",
     "release-tools": "github:kenryu42/release-tools",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.8",
-    "@types/node": "^22.0.0",
-    "@opencode-ai/sdk": "1.15.13"
+    "vitest": "^4.1.8"
   },
   "lint-staged": {
     "*": [
