@@ -43,8 +43,6 @@ For development, use an absolute path:
 }
 ```
 
-See [LOCAL_OPENCODE_TESTING.md](docs/LOCAL_OPENCODE_TESTING.md) for the full local testing workflow.
-
 ## Models
 
 | Model | Context | Max Output | Reasoning | Input |
@@ -107,8 +105,6 @@ bun run test         # tests only
 bun run typecheck    # tsc --noEmit
 bun run coverage     # tests with coverage
 ```
-
-See [OPENCODE_PLUGIN_SETUP.md](docs/OPENCODE_PLUGIN_SETUP.md) for packaging details.
 
 ## License
 
