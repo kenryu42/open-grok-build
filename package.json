@@ -50,7 +50,7 @@
   "homepage": "https://github.com/kenryu42/open-grok-build#readme",
   "peerDependencies": {
     "@opencode-ai/plugin": ">=1.15.0",
-    "@opentui/solid": "0.2.16"
+    "@opentui/solid": ">=0.2.16"
   },
   "peerDependenciesMeta": {
     "@opentui/solid": {
