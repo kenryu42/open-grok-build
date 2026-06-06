@@ -5,11 +5,10 @@ import { resolveModels } from '../models/catalog.js';
 import { sanitizePayload } from '../payload/sanitize.js';
 import { GROK_BUILD_PROVIDER_ID, grokBuildProviderConfig, toPluginModels } from './grokModels.js';
 
-import { OPENCODE_INSTALLATION_VERSION } from './version.js';
-
-const GROK_BUILD_VERSION = '0.2.16';
+const GROK_BUILD_VERSION = '0.2.22';
 const OAUTH_DUMMY_KEY = 'opencode-oauth-dummy-key';
 const ACCESS_TOKEN_REFRESH_SKEW_MS = 120_000;
+const USER_AGENT = `grok-pager/${GROK_BUILD_VERSION} grok-shell/${GROK_BUILD_VERSION} (macos; aarch64)`;
 
 /**
  * Checks the stored expiry timestamp against an early-refresh threshold.
@@ -118,10 +117,10 @@ export const OpenGrokBuildPlugin: Plugin = async (input: PluginInput) => {
               }
             }
             headers.set('authorization', `Bearer ${currentAuth.access}`);
-            headers.set('x-grok-client-identifier', 'grok-shell');
+            headers.set('x-grok-client-identifier', 'grok-pager');
             headers.set('x-grok-client-version', GROK_BUILD_VERSION);
             headers.set('x-xai-token-auth', 'xai-grok-cli');
-            headers.set('User-Agent', `opencode/${OPENCODE_INSTALLATION_VERSION}`);
+            headers.set('User-Agent', USER_AGENT);
 
             return fetch(requestInput, { ...init, headers });
           },
@@ -165,12 +164,12 @@ export const OpenGrokBuildPlugin: Plugin = async (input: PluginInput) => {
 
     'chat.headers': async (chatInput, output) => {
       if (!isGrokBuildModel(chatInput.model)) return;
-      output.headers['x-grok-client-identifier'] = 'open-grok-build';
+      output.headers['x-grok-client-identifier'] = 'grok-pager';
       output.headers['x-grok-client-version'] = GROK_BUILD_VERSION;
       output.headers['x-xai-token-auth'] = 'xai-grok-cli';
       output.headers['x-grok-model-override'] = chatInput.model.id;
       output.headers['x-grok-conv-id'] = chatInput.sessionID;
-      output.headers['User-Agent'] = `opencode/${OPENCODE_INSTALLATION_VERSION}`;
+      output.headers['User-Agent'] = USER_AGENT;
     },
 
     'chat.params': async (chatInput, output) => {
