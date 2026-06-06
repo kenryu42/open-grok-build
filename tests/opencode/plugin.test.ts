@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { collectGrokShimTools } from '../../src/opencode/collectGrokTools.js';
 import { grokBuildProviderConfig } from '../../src/opencode/grokModels.js';
 import { OpenGrokBuildPlugin } from '../../src/opencode/plugin.js';
-
-import { GROK_SHIM_TOOL_NAMES } from '../../src/tools/register.js';
 
 function testPluginInput() {
   return {
@@ -18,7 +15,7 @@ function testPluginInput() {
 }
 
 describe('OpenGrokBuildPlugin', () => {
-  it('registers grok-build provider config and Cursor shim tools', async () => {
+  it('registers grok-build provider config without custom tools', async () => {
     const hooks = await OpenGrokBuildPlugin(testPluginInput());
 
     const cfg: { provider?: Record<string, unknown> } = {};
@@ -29,17 +26,7 @@ describe('OpenGrokBuildPlugin', () => {
     expect(providerCfg.api).toBe('https://cli-chat-proxy.grok.com/v1');
     expect(Object.keys(providerCfg.models)).toContain('grok-build');
 
-    const toolNames = Object.keys(hooks.tool ?? {}).sort();
-    expect(toolNames).toEqual([...GROK_SHIM_TOOL_NAMES].sort());
-    expect(toolNames).not.toContain('WebSearch');
-  });
-
-  it('collects the same shim tools as registerGrokTools', () => {
-    expect(
-      collectGrokShimTools()
-        .map((t) => t.name)
-        .sort(),
-    ).toEqual([...GROK_SHIM_TOOL_NAMES].sort());
+    expect(hooks.tool).toBeUndefined();
   });
 
   it('exposes grok-build OAuth auth hook', async () => {

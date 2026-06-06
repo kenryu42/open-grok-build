@@ -5,14 +5,13 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-red.svg)](https://opensource.org/licenses/MIT)
 
 
-[OpenCode](https://opencode.ai) plugin that connects xAI's **Grok Build** models (`cli-chat-proxy.grok.com`) to your terminal. Ships OAuth 2.0 + PKCE authentication, a curated model catalog, payload sanitization for xAI API quirks, Cursor-style tool shims, and live billing queries — all as a drop-in plugin.
+[OpenCode](https://opencode.ai) plugin that connects xAI's **Grok Build** models (`cli-chat-proxy.grok.com`) to your terminal. Ships OAuth 2.0 + PKCE authentication, a curated model catalog, payload sanitization for xAI API quirks, and live billing queries — all as a drop-in plugin.
 
 ## Features
 
 - **OAuth 2.0 + PKCE** — Browser-based login via `auth.x.ai` with automatic token refresh
 - **Model catalog** — Six Grok Build models with correct cost, context window, and reasoning metadata
 - **Payload sanitization** — Transparent rewrites for xAI's Responses API quirks (reasoning strip, image normalization, system→instructions, `response_format`→`text.format`, and more)
-- **Tool shims** — Cursor-compatible filesystem and shell tools (`Grep`, `Glob`, `LS`, `Read`, `Write`, `StrReplace`, `Edit`, `Delete`, `Shell`)
 - **Billing usage** — `/grok-build-usage` slash command shows live credit quota as a TUI toast (no LLM turn consumed)
 
 ## Quick Start
@@ -23,7 +22,7 @@
 opencode plugin -g open-grok-build
 ```
 
-This registers both the server plugin (models, OAuth, payload sanitization, tool shims) and the TUI plugin (`/grok-build-usage` slash command). Restart the TUI after installing.
+This registers both the server plugin (models, OAuth, payload sanitization) and the TUI plugin (`/grok-build-usage` slash command). Restart the TUI after installing.
 
 ### 2. Connect
 
@@ -55,20 +54,6 @@ For development, use an absolute path:
 | `grok-4.20-multi-agent-0309` | 2M | 30K | ✓ | text, image |
 
 Override with `GROK_BUILD_MODELS` (comma-separated model IDs). Unknown IDs get sensible defaults.
-
-## Tool Shims
-
-The plugin registers Cursor-compatible tool definitions that Grok Build models can call:
-
-| Tool | Description |
-|---|---|
-| `Grep` / `Glob` | Search file contents and filenames |
-| `LS` | List directory contents |
-| `Read` | Read file contents |
-| `Write` / `StrReplace` / `Edit` / `Delete` | Modify files |
-| `Shell` | Execute shell commands |
-
-`web_search` / `websearch` are suppressed — Grok Build does not support web search through this endpoint.
 
 ## Payload Sanitization
 

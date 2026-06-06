@@ -1,20 +1,15 @@
 // @ts-nocheck — OpenCode config/auth hook payloads are loosely typed at the host boundary.
-import type { Hooks, Plugin, PluginInput } from '@opencode-ai/plugin';
-import { tool } from '@opencode-ai/plugin/tool';
+import type { Plugin, PluginInput } from '@opencode-ai/plugin';
 import * as oauth from '../auth/oauth.js';
 import { resolveModels } from '../models/catalog.js';
 import { sanitizePayload } from '../payload/sanitize.js';
-import { collectGrokShimTools } from './collectGrokTools.js';
 import { GROK_BUILD_PROVIDER_ID, grokBuildProviderConfig, toPluginModels } from './grokModels.js';
-import { grokToolArgSchemas } from './grokToolSchemas.js';
 
 import { OPENCODE_INSTALLATION_VERSION } from './version.js';
 
 const GROK_BUILD_VERSION = '0.2.16';
 const OAUTH_DUMMY_KEY = 'opencode-oauth-dummy-key';
 const ACCESS_TOKEN_REFRESH_SKEW_MS = 120_000;
-
-const collectedTools = collectGrokShimTools();
 
 /**
  * Checks the stored expiry timestamp against an early-refresh threshold.
@@ -28,37 +23,6 @@ function tokenIsExpiring(expires: number | undefined, skewMs: number): boolean {
 
 function isGrokBuildModel(model: { providerID: string }) {
   return model.providerID === GROK_BUILD_PROVIDER_ID;
-}
-
-function buildGrokToolDefinitions() {
-  const defs: NonNullable<Hooks['tool']> = {};
-  for (const entry of collectedTools) {
-    const args = grokToolArgSchemas[entry.name as keyof typeof grokToolArgSchemas];
-    if (!args) continue;
-    defs[entry.name] = tool({
-      description: entry.description,
-      args,
-      async execute(params, ctx) {
-        const result = await entry.execute(
-          'opencode',
-          params as Record<string, unknown>,
-          ctx.abort,
-          undefined,
-          { cwd: ctx.directory },
-        );
-        const text = result.content
-          .filter((part) => part.type === 'text')
-          .map((part) => part.text)
-          .join('\n');
-        return {
-          title: entry.name,
-          output: text,
-          metadata: result.details ?? {},
-        };
-      },
-    });
-  }
-  return defs;
 }
 
 export const OpenGrokBuildPlugin: Plugin = async (input: PluginInput) => {
@@ -220,7 +184,5 @@ export const OpenGrokBuildPlugin: Plugin = async (input: PluginInput) => {
       );
       output.options = { ...output.options, ...sanitized };
     },
-
-    tool: buildGrokToolDefinitions(),
   };
 };
