@@ -74,6 +74,6 @@ describe('grok-build-usage command', () => {
     const report = await buildGrokBuildUsageReport();
 
     expect(report.join('\n')).toContain('billing refresh failed');
-    expect(report.join('\n')).toContain('no billing data available');
+    expect(report.join('\n')).toContain('billing data unavailable');
   });
 });

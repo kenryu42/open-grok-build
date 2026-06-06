@@ -38,7 +38,7 @@ describe('billing', () => {
   it('does not fetch billing when no token is available', async () => {
     const lines = formatQuota(undefined);
     expect(lines.join('\n')).toContain(
-      'no billing data available — run /connect grok-build or set GROK_BUILD_OAUTH_TOKEN',
+      'billing data unavailable — try again, or run /connect grok-build if not yet authenticated',
     );
   });
 
@@ -48,7 +48,7 @@ describe('billing', () => {
     );
 
     await expect(fetchBillingUsage('token')).rejects.toThrow('invalid billing payload');
-    expect(formatQuota(undefined).join('\n')).toContain('no billing data available');
+    expect(formatQuota(undefined).join('\n')).toContain('billing data unavailable');
   });
 
   it('rejects invalid billing reset timestamps', async () => {

@@ -43,7 +43,7 @@ export function formatQuota(usage: BillingUsage | undefined) {
   if (!usage) {
     return [
       '  Usage:',
-      '    no billing data available — run /connect grok-build or set GROK_BUILD_OAUTH_TOKEN',
+      '    billing data unavailable — try again, or run /connect grok-build if not yet authenticated',
     ];
   }
 
