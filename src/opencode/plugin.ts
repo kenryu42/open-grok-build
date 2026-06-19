@@ -183,5 +183,21 @@ export const OpenGrokBuildPlugin: Plugin = async (input: PluginInput) => {
       );
       output.options = { ...output.options, ...sanitized };
     },
+
+    // opencode's task tool throws synchronously when task_id lacks the "ses"
+    // prefix, escaping its own catchCause guard and crashing every subagent
+    // launch. Non-reasoning models (e.g. grok-composer) fabricate arbitrary
+    // IDs. Strip invalid IDs in place so the tool falls through to creating a
+    // fresh subagent session; a real ses_ ID is preserved for resume.
+    // https://github.com/anomalyco/opencode/issues/16755
+    'tool.execute.before': async (toolInput, output) => {
+      if (toolInput.tool !== 'task') return;
+      const args = output.args;
+      if (!args || typeof args !== 'object') return;
+      const taskID = (args as Record<string, unknown>).task_id;
+      if (typeof taskID === 'string' && !taskID.startsWith('ses')) {
+        (args as Record<string, unknown>).task_id = undefined;
+      }
+    },
   };
 };
