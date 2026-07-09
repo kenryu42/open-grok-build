@@ -1,6 +1,6 @@
 {
   "name": "open-grok-build",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "description": "OpenCode plugin for Grok Build API (OAuth and payload sanitization).",
   "keywords": [
     "opencode",
