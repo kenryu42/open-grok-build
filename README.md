@@ -10,7 +10,7 @@
 ## Features
 
 - **OAuth 2.0 + PKCE** — Browser-based login via `auth.x.ai` with automatic token refresh
-- **Model catalog** — Six Grok Build models with correct cost, context window, and reasoning metadata
+- **Model catalog** — Seven Grok Build models with correct cost, context window, and reasoning metadata
 - **Payload sanitization** — Transparent rewrites for xAI's Responses API quirks (reasoning strip, image normalization, system→instructions, `response_format`→`text.format`, and more)
 - **Billing usage** — `/grok-build-usage` slash command shows live credit quota as a TUI toast (no LLM turn consumed)
 
@@ -49,6 +49,7 @@ For development, use an absolute path:
 | `grok-composer-2.5-fast` | 200K | 30K | — | text, image |
 | `grok-build` | 512K | 30K | ✓ | text, image |
 | `grok-4.3` | 1M | 30K | ✓ | text, image |
+| `grok-4.5` | 500K | 30K | ✓ | text, image |
 | `grok-4.20-0309-reasoning` | 2M | 30K | ✓ | text, image |
 | `grok-4.20-0309-non-reasoning` | 2M | 30K | — | text, image |
 | `grok-4.20-multi-agent-0309` | 2M | 30K | ✓ | text, image |
