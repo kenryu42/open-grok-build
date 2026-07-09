@@ -51,7 +51,7 @@ describe('grok-build-usage command', () => {
 
     const report = await buildGrokBuildUsageReport();
 
-    expect(report.join('\n')).toContain('500 / 4,000 credits used');
+    expect(report.join('\n')).toContain('500 / 4,000 used');
     expect(report.join('\n')).not.toContain('no billing data available');
   });
 
@@ -64,7 +64,7 @@ describe('grok-build-usage command', () => {
     const report = await buildGrokBuildUsageReport();
 
     expect(report.join('\n')).toContain('GROK_BUILD_OAUTH_TOKEN');
-    expect(report.join('\n')).toContain('10 / 100 credits used');
+    expect(report.join('\n')).toContain('10 / 100 used');
   });
 
   it('shows billing unavailable when refresh fails', async () => {
