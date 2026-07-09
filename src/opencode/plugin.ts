@@ -5,7 +5,9 @@ import { resolveModels } from '../models/catalog.js';
 import { sanitizePayload } from '../payload/sanitize.js';
 import { GROK_BUILD_PROVIDER_ID, grokBuildProviderConfig, toPluginModels } from './grokModels.js';
 
-const GROK_BUILD_VERSION = '0.2.22';
+// Grok CLI client version. Keep it in sync with the version the official Grok
+// CLI client emits (observed in captured cli-chat-proxy.grok.com traffic).
+const GROK_BUILD_VERSION = '0.2.91';
 const OAUTH_DUMMY_KEY = 'opencode-oauth-dummy-key';
 const ACCESS_TOKEN_REFRESH_SKEW_MS = 120_000;
 const USER_AGENT = `grok-pager/${GROK_BUILD_VERSION} grok-shell/${GROK_BUILD_VERSION} (macos; aarch64)`;
