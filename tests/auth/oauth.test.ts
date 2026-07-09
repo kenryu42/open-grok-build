@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getBaseUrl, login, refresh } from '../../src/auth/oauth.js';
+import { beginGrokBuildDeviceOAuth, getBaseUrl, login, refresh } from '../../src/auth/oauth.js';
 import { XaiErrorCode } from '../../src/shared/errors.js';
 
 const originalEnv = { ...process.env };
@@ -19,12 +19,43 @@ const discoveryDocument = {
   authorization_endpoint: 'https://auth.x.ai/oauth/authorize',
   token_endpoint: 'https://auth.x.ai/oauth/token',
 };
+const discoveryWithDevice = {
+  ...discoveryDocument,
+  device_authorization_endpoint: 'https://auth.x.ai/oauth/device/code',
+};
 
 function authorizeCallback(auth: { url: string }) {
   const url = new URL(auth.url);
   void originalFetch(
     `${url.searchParams.get('redirect_uri')}?code=callback-code&state=${url.searchParams.get('state')}`,
   );
+}
+
+function deviceCodeResponse(overrides: Record<string, unknown> = {}) {
+  return {
+    device_code: 'device-code',
+    user_code: 'ABCD-EFGH',
+    verification_uri: 'https://auth.x.ai/device',
+    interval: 1,
+    expires_in: 600,
+    ...overrides,
+  };
+}
+
+function mockDeviceAuthFetch(tokenResponse: () => Response) {
+  return vi.fn<typeof fetch>(async (input) => {
+    if (input === 'https://auth.x.ai/.well-known/openid-configuration') {
+      return Response.json(discoveryWithDevice);
+    }
+    if (input === discoveryWithDevice.device_authorization_endpoint) {
+      return Response.json(
+        deviceCodeResponse({
+          verification_uri_complete: 'https://auth.x.ai/device?user_code=ABCD-EFGH',
+        }),
+      );
+    }
+    return tokenResponse();
+  });
 }
 
 afterEach(() => {
@@ -326,6 +357,83 @@ describe('OAuth helpers without network access', () => {
     await expect(resultPromise).resolves.toMatchObject({
       code: XaiErrorCode.CALLBACK_TIMEOUT,
       message: 'Timed out waiting for xAI OAuth callback.',
+    });
+  });
+
+  it('logs in with device code polling after authorization_pending and slow_down', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_700_000_000_000);
+    let tokenCalls = 0;
+    const fetchMock = mockDeviceAuthFetch(() => {
+      tokenCalls += 1;
+      if (tokenCalls === 1) {
+        return Response.json({ error: 'authorization_pending' }, { status: 400 });
+      }
+      if (tokenCalls === 2) {
+        return Response.json({ error: 'slow_down' }, { status: 400 });
+      }
+      return Response.json({
+        access_token: 'device-access',
+        refresh_token: 'device-refresh',
+        expires_in: 900,
+        id_token: 'device-id',
+        token_type: 'Bearer',
+      });
+    });
+    globalThis.fetch = fetchMock;
+
+    const session = await beginGrokBuildDeviceOAuth();
+    expect(session.url).toBe('https://auth.x.ai/device?user_code=ABCD-EFGH');
+    expect(session.instructions).toContain('ABCD-EFGH');
+
+    const finishPromise = session.finish();
+    await vi.advanceTimersByTimeAsync(20_000);
+
+    // Polling sleeps advance fake timers before credentialsFromLoginPayload
+    // stamps expires (1s + 1s + 6s after slow_down = 8s).
+    await expect(finishPromise).resolves.toMatchObject({
+      access: 'device-access',
+      refresh: 'device-refresh',
+      expires: 1_700_000_000_000 + 8_000 + 900_000,
+      tokenEndpoint: 'https://auth.x.ai/oauth/token',
+      discovery: discoveryWithDevice,
+      idToken: 'device-id',
+      tokenType: 'Bearer',
+    });
+
+    expect(tokenCalls).toBe(3);
+    expect((fetchMock.mock.calls.at(-1)?.[1]?.body as URLSearchParams).toString()).toBe(
+      'grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Adevice_code&client_id=b1a00492-073a-47ea-816f-4c329264a828&device_code=device-code',
+    );
+  });
+
+  it('rejects device login when discovery omits the device endpoint', async () => {
+    globalThis.fetch = vi.fn<typeof fetch>(async () => Response.json(discoveryDocument));
+
+    await expect(beginGrokBuildDeviceOAuth()).rejects.toMatchObject({
+      code: XaiErrorCode.DEVICE_AUTHORIZATION_UNAVAILABLE,
+      message: 'xAI OIDC discovery did not include a device authorization endpoint.',
+    });
+  });
+
+  it('marks denied device authorization as failed', async () => {
+    vi.useFakeTimers();
+    const fetchMock = mockDeviceAuthFetch(() =>
+      Response.json({ error: 'access_denied', error_description: 'user denied' }, { status: 400 }),
+    );
+    globalThis.fetch = fetchMock;
+
+    const session = await beginGrokBuildDeviceOAuth();
+    const finishPromise = session.finish().then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    await expect(finishPromise).resolves.toMatchObject({
+      code: XaiErrorCode.DEVICE_AUTHORIZATION_FAILED,
+      reloginRequired: true,
+      message: 'xAI device authorization failed: 400 user denied',
     });
   });
 

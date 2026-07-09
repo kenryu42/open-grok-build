@@ -27,10 +27,11 @@ This registers both the server plugin (models, OAuth, payload sanitization) and 
 ### 2. Connect
 
 ```
-/connect grok-build → Grok Build (cli-chat-proxy)
+/connect grok-build → Browser login (default)
+                 → Device login (headless)
 ```
 
-Or set `GROK_BUILD_OAUTH_TOKEN` for a static token bypass (no auto-refresh).
+Use **Browser login** on a local machine with a loopback callback. Use **Device login** on headless / remote hosts (SSH, VPS, Docker, CI): open the verification URL on any device and enter the short code.
 
 ### Local checkout
 
@@ -79,7 +80,6 @@ The plugin transparently rewrites outgoing requests to handle xAI's Responses AP
 | `GROK_BUILD_OAUTH_CLIENT_ID` | *(built-in)* | OAuth client ID override |
 | `GROK_BUILD_CALLBACK_HOST` | `127.0.0.1` | OAuth loopback callback host |
 | `GROK_BUILD_CALLBACK_PORT` | `56122` | OAuth loopback callback port |
-| `GROK_BUILD_OAUTH_TOKEN` | — | Static token bypass (skips OAuth, no refresh) |
 | `GROK_BUILD_TOKEN_TIMEOUT_MS` | `30000` | Timeout for OAuth token requests |
 
 ## Development

@@ -26,6 +26,33 @@ function isGrokBuildModel(model: { providerID: string }) {
   return model.providerID === GROK_BUILD_PROVIDER_ID;
 }
 
+function oauthAuthorize(start: () => Promise<oauth.GrokBuildOAuthSession>) {
+  return async () => {
+    const session = await start();
+    return {
+      url: session.url,
+      instructions: session.instructions,
+      method: 'auto' as const,
+      callback: async () => {
+        try {
+          const credentials = await session.finish();
+          return {
+            type: 'success' as const,
+            refresh: credentials.refresh,
+            access: credentials.access,
+            expires: credentials.expires,
+            tokenEndpoint: (credentials as Record<string, unknown>).tokenEndpoint as
+              | string
+              | undefined,
+          };
+        } catch {
+          return { type: 'failed' as const };
+        }
+      },
+    };
+  };
+}
+
 export const OpenGrokBuildPlugin: Plugin = async (input: PluginInput) => {
   return {
     config: async (cfg) => {
@@ -130,36 +157,17 @@ export const OpenGrokBuildPlugin: Plugin = async (input: PluginInput) => {
       },
       methods: [
         {
-          label: 'Grok Build (cli-chat-proxy)',
+          label: 'Browser login (default)',
           type: 'oauth',
-          authorize: async () => {
-            const session = await oauth.beginGrokBuildOAuth('open-grok-build');
-            return {
-              url: session.url,
-              instructions: session.instructions,
-              method: 'auto' as const,
-              callback: async () => {
-                try {
-                  const credentials = await session.finish();
-                  return {
-                    type: 'success' as const,
-                    refresh: credentials.refresh,
-                    access: credentials.access,
-                    expires: credentials.expires,
-                    tokenEndpoint: (credentials as Record<string, unknown>).tokenEndpoint as
-                      | string
-                      | undefined,
-                  };
-                } catch {
-                  return { type: 'failed' as const };
-                }
-              },
-            };
-          },
+          authorize: oauthAuthorize(() => oauth.beginGrokBuildOAuth('open-grok-build')),
         },
         {
-          label: 'Grok Build token bypass (GROK_BUILD_OAUTH_TOKEN)',
-          type: 'api',
+          // RFC 8628 device-code flow for headless / remote hosts. No loopback
+          // callback server — the user opens the verification URL on any
+          // device, enters the short code, and the CLI polls the token endpoint.
+          label: 'Device login (headless)',
+          type: 'oauth',
+          authorize: oauthAuthorize(() => oauth.beginGrokBuildDeviceOAuth()),
         },
       ],
     },

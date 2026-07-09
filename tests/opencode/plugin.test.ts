@@ -48,7 +48,10 @@ describe('OpenGrokBuildPlugin', () => {
   it('exposes grok-build OAuth auth hook', async () => {
     const hooks = await OpenGrokBuildPlugin(testPluginInput());
     expect(hooks.auth?.provider).toBe('grok-build');
-    expect(hooks.auth?.methods?.length).toBeGreaterThan(0);
+    expect(hooks.auth?.methods).toEqual([
+      expect.objectContaining({ label: 'Browser login (default)', type: 'oauth' }),
+      expect.objectContaining({ label: 'Device login (headless)', type: 'oauth' }),
+    ]);
   });
 
   it('does not register grok-build-usage as a server slash command', async () => {
