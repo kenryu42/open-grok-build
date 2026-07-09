@@ -23,10 +23,8 @@ const SCOPE =
 const CALLBACK_HOST = process.env.GROK_BUILD_CALLBACK_HOST || '127.0.0.1';
 const CALLBACK_PORT = Number.parseInt(process.env.GROK_BUILD_CALLBACK_PORT || '56122', 10);
 const CALLBACK_PATH = '/callback';
-/**
- * No skew on storage — let the consumer (plugin.ts) decide when to refresh.
- * OpenCode stores the full token lifetime and checks `expires < Date.now()`.
- */
+/** Refresh 120s before actual expiry — same strategy as pi-grok-cli. */
+const REFRESH_SKEW_MS = 120_000;
 const TOKEN_REQUEST_TIMEOUT_MS = Number.parseInt(
   process.env.GROK_BUILD_TOKEN_TIMEOUT_MS || '30000',
   10,
@@ -355,7 +353,7 @@ function credentialsFromLoginPayload(
   return {
     access,
     refresh,
-    expires: Date.now() + expiresIn * 1000,
+    expires: Date.now() + expiresIn * 1000 - REFRESH_SKEW_MS,
     tokenEndpoint,
     discovery: { authorization_endpoint: '', token_endpoint: tokenEndpoint },
     idToken: String(payload.id_token ?? ''),
@@ -678,7 +676,7 @@ export async function refresh(credentials: OAuthCredentials): Promise<OAuthCrede
     ...xai,
     access,
     refresh: refresh_new,
-    expires: Date.now() + expiresIn * 1000,
+    expires: Date.now() + expiresIn * 1000 - REFRESH_SKEW_MS,
     tokenEndpoint,
     idToken: String(payload.id_token ?? xai.idToken ?? ''),
     tokenType: String(payload.token_type ?? xai.tokenType ?? 'Bearer'),

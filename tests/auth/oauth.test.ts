@@ -123,7 +123,7 @@ describe('OAuth helpers without network access', () => {
     ).resolves.toMatchObject({
       access: 'new-access',
       refresh: 'new-refresh',
-      expires: 1_700_000_600_000,
+      expires: 1_700_000_600_000 - 120_000,
       tokenEndpoint: 'https://auth.x.ai/oauth/token',
       idToken: 'new-id',
       tokenType: 'DPoP',
@@ -329,7 +329,7 @@ describe('OAuth helpers without network access', () => {
     ).resolves.toMatchObject({
       access: 'login-access',
       refresh: 'login-refresh',
-      expires: 1_700_000_900_000,
+      expires: 1_700_000_900_000 - 120_000,
       tokenEndpoint: 'https://auth.x.ai/oauth/token',
       discovery: discoveryDocument,
       idToken: 'login-id',
@@ -394,7 +394,7 @@ describe('OAuth helpers without network access', () => {
     await expect(finishPromise).resolves.toMatchObject({
       access: 'device-access',
       refresh: 'device-refresh',
-      expires: 1_700_000_000_000 + 8_000 + 900_000,
+      expires: 1_700_000_000_000 + 8_000 + 900_000 - 120_000,
       tokenEndpoint: 'https://auth.x.ai/oauth/token',
       discovery: discoveryWithDevice,
       idToken: 'device-id',

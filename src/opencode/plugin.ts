@@ -9,17 +9,47 @@ import { GROK_BUILD_PROVIDER_ID, grokBuildProviderConfig, toPluginModels } from 
 // CLI client emits (observed in captured cli-chat-proxy.grok.com traffic).
 const GROK_BUILD_VERSION = '0.2.91';
 const OAUTH_DUMMY_KEY = 'opencode-oauth-dummy-key';
-const ACCESS_TOKEN_REFRESH_SKEW_MS = 120_000;
 const USER_AGENT = `grok-pager/${GROK_BUILD_VERSION} grok-shell/${GROK_BUILD_VERSION} (macos; aarch64)`;
 
+type LiveOAuth = {
+  access: string;
+  refresh: string;
+  expires: number;
+  tokenEndpoint?: string;
+};
+
 /**
- * Checks the stored expiry timestamp against an early-refresh threshold.
- * Replaces the old JWT-decoding check — the stored `expires` from oauth.ts
- * is authoritative and already accounts for the server `expires_in` response.
+ * `expires` from oauth.ts already subtracts REFRESH_SKEW_MS, so refresh when
+ * the stored deadline is reached — same model as pi-grok-cli.
  */
-function tokenIsExpiring(expires: number | undefined, skewMs: number): boolean {
+function tokenIsExpiring(expires: number | undefined): boolean {
   if (typeof expires !== 'number' || !Number.isFinite(expires)) return true;
-  return expires - Date.now() <= skewMs;
+  return expires <= Date.now();
+}
+
+function mergeHeaders(requestInput: RequestInfo | URL, init?: RequestInit) {
+  const headers = new Headers(requestInput instanceof Request ? requestInput.headers : undefined);
+  if (init?.headers) {
+    const entries =
+      init.headers instanceof Headers
+        ? init.headers.entries()
+        : Array.isArray(init.headers)
+          ? init.headers
+          : Object.entries(init.headers as Record<string, string | undefined>);
+    for (const [key, value] of entries) {
+      if (value !== undefined) headers.set(key, String(value));
+    }
+  }
+  return headers;
+}
+
+function applyGrokHeaders(headers: Headers, access: string) {
+  headers.set('authorization', `Bearer ${access}`);
+  headers.set('x-grok-client-identifier', 'grok-pager');
+  headers.set('x-grok-client-version', GROK_BUILD_VERSION);
+  headers.set('x-xai-token-auth', 'xai-grok-cli');
+  headers.set('User-Agent', USER_AGENT);
+  return headers;
 }
 
 function isGrokBuildModel(model: { providerID: string }) {
@@ -36,14 +66,15 @@ function oauthAuthorize(start: () => Promise<oauth.GrokBuildOAuthSession>) {
       callback: async () => {
         try {
           const credentials = await session.finish();
+          // Only schema-legal OAuth fields. OpenCode's Auth.Oauth accepts
+          // access/refresh/expires (+ optional accountId/enterpriseUrl).
+          // Extra keys like tokenEndpoint can fail auth.set validation and
+          // leave a rotated refresh_token unpersisted.
           return {
             type: 'success' as const,
             refresh: credentials.refresh,
             access: credentials.access,
             expires: credentials.expires,
-            tokenEndpoint: (credentials as Record<string, unknown>).tokenEndpoint as
-              | string
-              | undefined,
           };
         } catch {
           return { type: 'failed' as const };
@@ -76,82 +107,91 @@ export const OpenGrokBuildPlugin: Plugin = async (input: PluginInput) => {
         const auth = await getAuth();
         if (auth.type !== 'oauth') return {};
 
-        let refreshPromise:
-          | Promise<{ access: string; refresh: string; expires: number; tokenEndpoint?: string }>
-          | undefined;
+        // Process-local source of truth after a successful refresh. OpenCode's
+        // auth.json schema only keeps access/refresh/expires; if auth.set fails
+        // or lags, we still must use the rotated refresh_token for the rest of
+        // this process lifetime (xAI invalidates the previous one on rotation).
+        let live: LiveOAuth | undefined;
+        let refreshPromise: Promise<LiveOAuth> | undefined;
+
+        async function resolveAuth(forceRefresh = false): Promise<LiveOAuth | undefined> {
+          const currentAuth = await getAuth();
+          if (currentAuth.type !== 'oauth') return undefined;
+
+          const base: LiveOAuth = live ?? {
+            access: currentAuth.access,
+            refresh: currentAuth.refresh,
+            expires: currentAuth.expires ?? 0,
+            tokenEndpoint: currentAuth.tokenEndpoint as string | undefined,
+          };
+
+          if (!forceRefresh && !tokenIsExpiring(base.expires)) return base;
+
+          if (!refreshPromise) {
+            const refreshToken = base.refresh;
+            const savedEndpoint = base.tokenEndpoint;
+            refreshPromise = oauth
+              .refresh({
+                access: base.access,
+                refresh: refreshToken,
+                expires: base.expires,
+                ...(savedEndpoint ? { tokenEndpoint: savedEndpoint } : {}),
+              })
+              .then(async (tokens) => {
+                const tokenEndpoint = (tokens as Record<string, unknown>).tokenEndpoint as
+                  | string
+                  | undefined;
+                const next: LiveOAuth = {
+                  access: tokens.access,
+                  refresh: tokens.refresh,
+                  expires: tokens.expires,
+                  ...(tokenEndpoint ? { tokenEndpoint } : {}),
+                };
+                // Persist only schema-legal fields. tokenEndpoint is not part of
+                // OpenCode's Auth.Oauth schema and would make auth.set fail,
+                // leaving the rotated refresh_token on disk stale forever.
+                await input.client.auth
+                  .set({
+                    path: { id: GROK_BUILD_PROVIDER_ID },
+                    body: {
+                      type: 'oauth',
+                      access: next.access,
+                      refresh: next.refresh,
+                      expires: next.expires,
+                    },
+                  })
+                  .catch(() => undefined);
+                live = next;
+                return next;
+              })
+              .finally(() => {
+                refreshPromise = undefined;
+              });
+          }
+          return refreshPromise;
+        }
 
         return {
           apiKey: OAUTH_DUMMY_KEY,
           async fetch(requestInput: RequestInfo | URL, init?: RequestInit) {
-            let currentAuth = await getAuth();
-            if (currentAuth.type !== 'oauth') return fetch(requestInput, init);
+            let current = await resolveAuth();
+            if (!current) return fetch(requestInput, init);
 
-            const expiresSoon = tokenIsExpiring(currentAuth.expires, ACCESS_TOKEN_REFRESH_SKEW_MS);
+            const send = (access: string) =>
+              fetch(requestInput, {
+                ...init,
+                headers: applyGrokHeaders(mergeHeaders(requestInput, init), access),
+              });
 
-            if (expiresSoon) {
-              if (!refreshPromise) {
-                const refreshToken = currentAuth.refresh;
-                const savedEndpoint = currentAuth.tokenEndpoint as string | undefined;
-                refreshPromise = oauth
-                  .refresh({
-                    access: currentAuth.access,
-                    refresh: refreshToken,
-                    expires: currentAuth.expires ?? 0,
-                    ...(savedEndpoint ? { tokenEndpoint: savedEndpoint } : {}),
-                  })
-                  .then(async (tokens) => {
-                    const expires = tokens.expires;
-                    const tokenEndpoint = (tokens as Record<string, unknown>).tokenEndpoint as
-                      | string
-                      | undefined;
-                    await input.client.auth
-                      .set({
-                        path: { id: GROK_BUILD_PROVIDER_ID },
-                        body: {
-                          type: 'oauth',
-                          access: tokens.access,
-                          refresh: tokens.refresh,
-                          expires,
-                          ...(tokenEndpoint ? { tokenEndpoint } : {}),
-                        },
-                      })
-                      .catch(() => undefined);
-                    return {
-                      access: tokens.access,
-                      refresh: tokens.refresh,
-                      expires,
-                      tokenEndpoint,
-                    };
-                  })
-                  .finally(() => {
-                    refreshPromise = undefined;
-                  });
-              }
-              const refreshed = await refreshPromise;
-              currentAuth = { ...currentAuth, ...refreshed };
-            }
+            const response = await send(current.access);
+            // Reactive refresh: access token rejected mid-flight (clock skew,
+            // missing expires_in on older sessions, or JWT exp ahead of stored
+            // deadline). Force one refresh and retry once.
+            if (response.status !== 401) return response;
 
-            const headers = new Headers(
-              requestInput instanceof Request ? requestInput.headers : undefined,
-            );
-            if (init?.headers) {
-              const entries =
-                init.headers instanceof Headers
-                  ? init.headers.entries()
-                  : Array.isArray(init.headers)
-                    ? init.headers
-                    : Object.entries(init.headers as Record<string, string | undefined>);
-              for (const [key, value] of entries) {
-                if (value !== undefined) headers.set(key, String(value));
-              }
-            }
-            headers.set('authorization', `Bearer ${currentAuth.access}`);
-            headers.set('x-grok-client-identifier', 'grok-pager');
-            headers.set('x-grok-client-version', GROK_BUILD_VERSION);
-            headers.set('x-xai-token-auth', 'xai-grok-cli');
-            headers.set('User-Agent', USER_AGENT);
-
-            return fetch(requestInput, { ...init, headers });
+            current = await resolveAuth(true);
+            if (!current) return response;
+            return send(current.access);
           },
         };
       },
