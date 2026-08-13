@@ -1,6 +1,6 @@
 {
   "name": "open-grok-build",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Full-featured Grok Build integration for OpenCode with OAuth, account rotation, and quota tracking.",
   "keywords": [
     "opencode",
