@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { beginGrokBuildDeviceOAuth, getBaseUrl, login, refresh } from '../../src/auth/oauth.js';
+import {
+  beginGrokBuildDeviceOAuth,
+  beginGrokBuildOAuth,
+  getBaseUrl,
+  login,
+  refresh,
+} from '../../src/auth/oauth.js';
 import { XaiErrorCode } from '../../src/shared/errors.js';
 
 const originalEnv = { ...process.env };
@@ -171,18 +177,36 @@ describe('OAuth helpers without network access', () => {
     });
   });
 
-  it('marks unauthorized refresh failures as requiring login', async () => {
-    const fetchMock = vi.fn<typeof fetch>(async () => new Response('revoked', { status: 401 }));
+  it('marks invalid_grant refresh failures as requiring login', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () =>
+      Response.json(
+        { error: 'invalid_grant', error_description: 'Refresh token was revoked' },
+        { status: 400 },
+      ),
+    );
     globalThis.fetch = fetchMock;
 
     await expect(refresh(storedRefreshCredentials)).rejects.toMatchObject({
       code: XaiErrorCode.REFRESH_FAILED,
       reloginRequired: true,
-      message: 'xAI token refresh failed: 401 revoked',
+      message: 'xAI token refresh failed: invalid_grant: Refresh token was revoked',
     });
   });
 
-  it('keeps server refresh failures retryable', async () => {
+  it('keeps forbidden and server refresh failures distinct from revoked credentials', async () => {
+    globalThis.fetch = vi.fn<typeof fetch>(async () =>
+      Response.json(
+        { error: 'access_denied', error_description: 'Account policy denied refresh' },
+        { status: 403 },
+      ),
+    );
+
+    await expect(refresh(storedRefreshCredentials)).rejects.toMatchObject({
+      code: XaiErrorCode.REFRESH_FAILED,
+      reloginRequired: false,
+      message: 'xAI token refresh failed: access_denied: Account policy denied refresh',
+    });
+
     const fetchMock = vi.fn<typeof fetch>(
       async () => new Response('temporarily unavailable', { status: 500 }),
     );
@@ -191,7 +215,17 @@ describe('OAuth helpers without network access', () => {
     await expect(refresh(storedRefreshCredentials)).rejects.toMatchObject({
       code: XaiErrorCode.REFRESH_FAILED,
       reloginRequired: false,
-      message: 'xAI token refresh failed: 500 temporarily unavailable',
+      message: 'xAI token refresh failed: Something went wrong on the server (HTTP 500).',
+    });
+  });
+
+  it('classifies a null refresh error body without a type failure', async () => {
+    globalThis.fetch = vi.fn<typeof fetch>(async () => Response.json(null, { status: 400 }));
+
+    await expect(refresh(storedRefreshCredentials)).rejects.toMatchObject({
+      code: XaiErrorCode.REFRESH_FAILED,
+      reloginRequired: false,
+      message: 'xAI token refresh failed: Request failed (HTTP 400).',
     });
   });
 
@@ -337,8 +371,81 @@ describe('OAuth helpers without network access', () => {
     });
 
     expect(fetchMock.mock.calls[1]?.[0]).toBe('https://auth.x.ai/oauth/token');
+    expect(new Headers(fetchMock.mock.calls[1]?.[1]?.headers).get('x-grok-client-version')).toBe(
+      '0.2.111',
+    );
     expect((fetchMock.mock.calls[1]?.[1]?.body as URLSearchParams).get('code')).toBe(
       'callback-code',
+    );
+  });
+
+  it.each([
+    'callback URL',
+    'callback query',
+    'one-time code',
+    'short opaque code',
+  ])('exchanges a pasted %s without waiting for loopback', async (format) => {
+    const fetchMock = vi.fn<typeof fetch>(async (input) => {
+      if (input === 'https://auth.x.ai/.well-known/openid-configuration') {
+        return Response.json(discoveryDocument);
+      }
+      return Response.json({
+        access_token: 'manual-access',
+        refresh_token: 'manual-refresh',
+      });
+    });
+    globalThis.fetch = fetchMock;
+
+    const session = await beginGrokBuildOAuth();
+    const authUrl = new URL(session.url);
+    const callbackUrl = new URL(authUrl.searchParams.get('redirect_uri') ?? '');
+    const code =
+      format === 'short opaque code' ? 'x=7' : 'manual-authorization-code-value-1234567890';
+    callbackUrl.searchParams.set('code', code);
+    callbackUrl.searchParams.set('state', authUrl.searchParams.get('state') ?? '');
+    const manualInput =
+      format === 'callback URL'
+        ? callbackUrl.toString()
+        : format === 'callback query'
+          ? callbackUrl.search
+          : code;
+
+    await expect(session.finish(manualInput)).resolves.toMatchObject({
+      access: 'manual-access',
+      refresh: 'manual-refresh',
+    });
+    expect((fetchMock.mock.calls[1]?.[1]?.body as URLSearchParams).get('code')).toBe(code);
+  });
+
+  it('ignores an invalid loopback state and accepts the later valid callback', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async (input) => {
+      if (input === 'https://auth.x.ai/.well-known/openid-configuration') {
+        return Response.json(discoveryDocument);
+      }
+      return Response.json({
+        access_token: 'login-access',
+        refresh_token: 'login-refresh',
+      });
+    });
+    globalThis.fetch = fetchMock;
+
+    const session = await beginGrokBuildOAuth();
+    const authUrl = new URL(session.url);
+    const redirectUri = authUrl.searchParams.get('redirect_uri') ?? '';
+    const finishPromise = session.finish();
+    const invalid = await originalFetch(`${redirectUri}?code=wrong-code&state=wrong-state`);
+    expect(invalid.status).toBe(400);
+    const valid = await originalFetch(
+      `${redirectUri}?code=correct-code&state=${authUrl.searchParams.get('state')}`,
+    );
+    expect(valid.status).toBe(200);
+
+    await expect(finishPromise).resolves.toMatchObject({
+      access: 'login-access',
+      refresh: 'login-refresh',
+    });
+    expect((fetchMock.mock.calls[1]?.[1]?.body as URLSearchParams).get('code')).toBe(
+      'correct-code',
     );
   });
 
@@ -402,6 +509,12 @@ describe('OAuth helpers without network access', () => {
     });
 
     expect(tokenCalls).toBe(3);
+    expect(new Headers(fetchMock.mock.calls[1]?.[1]?.headers).get('x-grok-client-surface')).toBe(
+      'ui',
+    );
+    expect((fetchMock.mock.calls[1]?.[1]?.body as URLSearchParams).get('referrer')).toBe(
+      'open-grok-build',
+    );
     expect((fetchMock.mock.calls.at(-1)?.[1]?.body as URLSearchParams).toString()).toBe(
       'grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Adevice_code&client_id=b1a00492-073a-47ea-816f-4c329264a828&device_code=device-code',
     );
@@ -433,7 +546,7 @@ describe('OAuth helpers without network access', () => {
     await expect(finishPromise).resolves.toMatchObject({
       code: XaiErrorCode.DEVICE_AUTHORIZATION_FAILED,
       reloginRequired: true,
-      message: 'xAI device authorization failed: 400 user denied',
+      message: 'xAI device authorization failed: access_denied: user denied',
     });
   });
 

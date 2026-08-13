@@ -1,5 +1,6 @@
 // @ts-nocheck — catalog fields extend SDK Model shape for grok-build provider config.
 import type { Model as ModelV2 } from '@opencode-ai/sdk/v2';
+import { getBaseUrl } from '../auth/oauth.js';
 import { type GrokBuildModelConfig, resolveModels } from '../models/catalog.js';
 
 export const GROK_BUILD_PROVIDER_ID = 'grok-build';
@@ -9,7 +10,7 @@ export function grokBuildProviderConfig() {
   return {
     name: 'Grok Build',
     npm: '@ai-sdk/openai-compatible',
-    api: 'https://cli-chat-proxy.grok.com/v1',
+    api: getBaseUrl(),
     models: Object.fromEntries(
       models.map((m) => [
         m.id,

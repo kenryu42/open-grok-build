@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as oauth from '../../src/auth/oauth.js';
 import { grokBuildProviderConfig } from '../../src/opencode/grokModels.js';
 import { OpenGrokBuildPlugin } from '../../src/opencode/plugin.js';
+import { useTempOpenCodeHome } from '../stateTestHelpers.js';
 
 type TaskExecuteBeforeInput = { tool: string; sessionID: string; callID: string };
 type TaskExecuteBeforeOutput = { args: Record<string, unknown> };
@@ -35,8 +36,16 @@ function testPluginInput(overrides: { authSet?: ReturnType<typeof vi.fn> } = {})
   };
 }
 
+const useTempHome = useTempOpenCodeHome('open-grok-build-plugin-');
+
+beforeEach(() => {
+  useTempHome();
+});
+
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
   vi.useRealTimers();
 });
 
@@ -51,6 +60,7 @@ describe('OpenGrokBuildPlugin', () => {
     const providerCfg = grokBuildProviderConfig();
     expect(providerCfg.api).toBe('https://cli-chat-proxy.grok.com/v1');
     expect(Object.keys(providerCfg.models)).toContain('grok-build');
+    expect(await hooks.provider?.models({ models: {} } as never)).toHaveProperty('grok-build');
 
     expect(hooks.tool).toBeUndefined();
   });
@@ -61,6 +71,7 @@ describe('OpenGrokBuildPlugin', () => {
     expect(hooks.auth?.methods).toEqual([
       expect.objectContaining({ label: 'Browser login (default)', type: 'oauth' }),
       expect.objectContaining({ label: 'Device login (headless)', type: 'oauth' }),
+      expect.objectContaining({ label: 'Paste callback/code (remote)', type: 'oauth' }),
     ]);
   });
 

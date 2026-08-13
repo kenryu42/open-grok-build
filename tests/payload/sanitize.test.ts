@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { sanitizePayload } from '../../src/payload/sanitize.js';
 
 describe('payload sanitization', () => {
-  it('removes unsupported items and moves all instructions', () => {
+  it('normalizes supported items and moves all instructions', () => {
     const payload = sanitizePayload(
       {
         instructions: 'existing instruction',
@@ -18,7 +18,12 @@ describe('payload sanitization', () => {
               { type: 'output_text', text: 'output text instruction' },
             ],
           },
-          { type: 'reasoning', content: 'cached reasoning' },
+          {
+            type: 'reasoning',
+            id: 'reasoning-1',
+            status: 'completed',
+            content: 'cached reasoning',
+          },
           { role: 'user', content: '' },
           { role: 'user', content: 'hello' },
           { role: 'system', content: 'later system instruction' },
@@ -36,10 +41,17 @@ describe('payload sanitization', () => {
     expect(payload.instructions).toBe(
       'existing instruction\n\nsystem instruction\n\ndeveloper instruction\noutput text instruction\n\nlater system instruction',
     );
-    expect(payload.input).toEqual([{ role: 'user', content: 'hello' }]);
-    expect(payload.include).toEqual(['message.output_text']);
+    expect(payload.input).toEqual([
+      {
+        type: 'reasoning',
+        id: 'reasoning-1',
+        content: [{ type: 'reasoning_text', text: 'cached reasoning' }],
+      },
+      { role: 'user', content: 'hello' },
+    ]);
+    expect(payload.include).toEqual(['reasoning.encrypted_content', 'message.output_text']);
     expect(payload.prompt_cache_retention).toBeUndefined();
-    expect(payload.reasoning).toEqual({ effort: 'low' });
+    expect(payload.reasoning).toEqual({ effort: 'low', summary: 'auto' });
     expect(payload.text).toEqual({ format: { type: 'json_object' } });
     expect(payload.response_format).toBeUndefined();
     expect(payload.prompt_cache_key).toBe('session-123');
@@ -61,12 +73,27 @@ describe('payload sanitization', () => {
     expect(payload.response_format).toBeUndefined();
   });
 
-  it('strips reasoning fields for models that do not accept reasoning effort', () => {
+  it('preserves xhigh reasoning effort for Grok 4.6', () => {
+    const payload = sanitizePayload(
+      {
+        input: 'plain prompt',
+        reasoning: { effort: 'xhigh' },
+      },
+      'grok-4.6',
+      undefined,
+      process.cwd(),
+    );
+
+    expect(payload.reasoning).toEqual({ effort: 'xhigh' });
+    expect(payload.include).toEqual(['reasoning.encrypted_content']);
+  });
+
+  it('preserves reasoning options while removing unsupported effort', () => {
     const payload = sanitizePayload(
       {
         input: 'plain prompt',
         include: ['reasoning.encrypted_content'],
-        reasoning: { effort: 'high' },
+        reasoning: { effort: 'high', summary: 'auto', future_option: true },
         reasoningEffort: 'high',
         prompt_cache_key: 'existing-session',
       },
@@ -76,10 +103,129 @@ describe('payload sanitization', () => {
     );
 
     expect(payload.input).toBe('plain prompt');
+    expect(payload.reasoning).toEqual({ summary: 'auto', future_option: true });
+    expect(payload.reasoningEffort).toBeUndefined();
+    expect(payload.include).toEqual(['reasoning.encrypted_content']);
+    expect(payload.prompt_cache_key).toBe('existing-session');
+  });
+
+  it('removes reasoning configuration for non-reasoning models', () => {
+    const payload = sanitizePayload(
+      {
+        input: 'plain prompt',
+        include: ['reasoning.encrypted_content'],
+        reasoning: { effort: 'high', summary: 'auto' },
+        reasoningEffort: 'high',
+      },
+      'grok-composer-2.5-fast',
+      undefined,
+      process.cwd(),
+    );
+
     expect(payload.reasoning).toBeUndefined();
     expect(payload.reasoningEffort).toBeUndefined();
     expect(payload.include).toBeUndefined();
-    expect(payload.prompt_cache_key).toBe('existing-session');
+  });
+
+  it('drops replayed reasoning items for non-reasoning models', () => {
+    const user = { role: 'user', content: 'continue without reasoning' };
+    const payload = sanitizePayload(
+      {
+        input: [
+          {
+            type: 'reasoning',
+            id: 'reasoning-from-prior-model',
+            content: [{ type: 'reasoning_text', text: 'prior reasoning' }],
+          },
+          user,
+        ],
+      },
+      'grok-composer-2.5-fast',
+      undefined,
+      process.cwd(),
+    );
+
+    expect(payload.input).toEqual([user]);
+  });
+
+  it('preserves ordered replayed reasoning and opaque fields', () => {
+    const input = [
+      { role: 'user', content: 'first turn' },
+      {
+        type: 'reasoning',
+        id: 'reasoning-1',
+        status: 'completed',
+        summary: [{ type: 'summary_text', text: 'summary' }],
+        encrypted_content: 'opaque-ciphertext',
+        future_field: { keep: true },
+        content: [
+          { text: 'needs discriminator' },
+          { type: 'reasoning_text', text: 'already typed' },
+          { type: 'future_reasoning_variant', text: 'future typed' },
+        ],
+      },
+      { type: 'message', role: 'assistant', content: 'answer' },
+      { role: 'user', content: 'second turn' },
+    ];
+    const payload = sanitizePayload(
+      {
+        input,
+        reasoning: { summary: 'auto' },
+      },
+      'grok-build/GROK-BUILD',
+      undefined,
+      process.cwd(),
+    );
+
+    expect(payload.input).toEqual([
+      input[0],
+      {
+        type: 'reasoning',
+        id: 'reasoning-1',
+        summary: [{ type: 'summary_text', text: 'summary' }],
+        encrypted_content: 'opaque-ciphertext',
+        future_field: { keep: true },
+        content: [
+          { type: 'reasoning_text', text: 'needs discriminator' },
+          { type: 'reasoning_text', text: 'already typed' },
+          { type: 'future_reasoning_variant', text: 'future typed' },
+        ],
+      },
+      input[2],
+      input[3],
+    ]);
+    expect(payload.reasoning).toEqual({ summary: 'auto' });
+    expect(payload.include).toEqual(['reasoning.encrypted_content']);
+  });
+
+  it('keeps the serialized replay prefix stable across turns', () => {
+    const firstTurn = [
+      { role: 'user', content: 'first turn' },
+      {
+        type: 'reasoning',
+        id: 'reasoning-1',
+        content: [{ text: 'first reasoning' }],
+        encrypted_content: 'encrypted-1',
+      },
+      { type: 'message', role: 'assistant', content: 'first answer' },
+    ];
+    const secondTurn = [
+      ...structuredClone(firstTurn),
+      { role: 'user', content: 'second turn' },
+      {
+        type: 'reasoning',
+        id: 'reasoning-2',
+        content: [{ text: 'second reasoning' }],
+        encrypted_content: 'encrypted-2',
+      },
+      { type: 'message', role: 'assistant', content: 'second answer' },
+    ];
+    const first = sanitizePayload({ input: firstTurn }, 'grok-build', undefined, process.cwd());
+    const second = sanitizePayload({ input: secondTurn }, 'grok-build', undefined, process.cwd());
+
+    expect(JSON.stringify((second.input as unknown[]).slice(0, firstTurn.length))).toBe(
+      JSON.stringify(first.input),
+    );
   });
 
   it('normalizes image parts and rewrites image tool output', () => {

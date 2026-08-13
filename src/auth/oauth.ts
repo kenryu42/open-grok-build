@@ -9,7 +9,13 @@
  */
 
 import { createServer } from 'node:http';
-import { XaiErrorCode, XaiOAuthError } from '../shared/errors.js';
+import { GROK_BUILD_VERSION } from '../opencode/identity.js';
+import {
+  redactSensitiveData,
+  userFacingApiErrorMessage,
+  XaiErrorCode,
+  XaiOAuthError,
+} from '../shared/errors.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -23,6 +29,7 @@ const SCOPE =
 const CALLBACK_HOST = process.env.GROK_BUILD_CALLBACK_HOST || '127.0.0.1';
 const CALLBACK_PORT = Number.parseInt(process.env.GROK_BUILD_CALLBACK_PORT || '56122', 10);
 const CALLBACK_PATH = '/callback';
+const MANUAL_AUTHORIZATION_CODE = /^[\x20-\x7E]{1,2048}$/;
 /** Refresh 120s before actual expiry — same strategy as pi-grok-cli. */
 const REFRESH_SKEW_MS = 120_000;
 const TOKEN_REQUEST_TIMEOUT_MS = Number.parseInt(
@@ -166,15 +173,64 @@ interface CallbackResult {
   errorDescription?: string;
 }
 
-function startCallbackServer(): Promise<{
+function parseCallbackParams(params: URLSearchParams, expectedState: string) {
+  const state = params.get('state') ?? undefined;
+  if (!state) return { error: 'OAuth state is missing.' };
+  if (state !== expectedState) return { error: 'OAuth state did not match.' };
+
+  const result: CallbackResult = {
+    code: params.get('code') ?? undefined,
+    state,
+    error: params.get('error') ?? undefined,
+    errorDescription: params.get('error_description') ?? undefined,
+  };
+  if (!result.code && !result.error) {
+    return { error: 'Callback did not include an authorization code or OAuth error.' };
+  }
+  return { result };
+}
+
+function parseManualCallback(input: string, expectedState: string) {
+  const value = input.trim();
+  if (!value) return { error: 'Pasted callback was empty.' };
+  try {
+    const url = new URL(value);
+    if (url.pathname !== CALLBACK_PATH) return { error: 'Callback URL path was not recognized.' };
+    return parseCallbackParams(url.searchParams, expectedState);
+  } catch {
+    const params = new URLSearchParams(value.replace(/^\?/, ''));
+    const callbackQuery = ['code', 'state', 'error', 'error_description'].some((key) =>
+      params.has(key),
+    );
+    if (!callbackQuery && MANUAL_AUTHORIZATION_CODE.test(value)) {
+      return { result: { code: value } };
+    }
+    return parseCallbackParams(params, expectedState);
+  }
+}
+
+function closeCallbackServer(server: import('node:http').Server) {
+  if (!server.listening) return Promise.resolve();
+  return new Promise<void>((resolve) => server.close(() => resolve()));
+}
+
+function startCallbackServer(expectedState: string): Promise<{
   server: import('node:http').Server;
   redirectUri: string;
+  acceptManualCallback: (input: string) => string | undefined;
+  cancel: () => void;
   waitForCallback: (timeoutMs: number) => Promise<CallbackResult>;
 }> {
   let settle: ((value: CallbackResult) => void) | undefined;
+  let settled = false;
   const callbackPromise = new Promise<CallbackResult>((resolve) => {
     settle = resolve;
   });
+  const accept = (result: CallbackResult) => {
+    if (settled) return;
+    settled = true;
+    settle?.(result);
+  };
 
   const server = createServer((req, res) => {
     try {
@@ -199,20 +255,19 @@ function startCallbackServer(): Promise<{
         return;
       }
 
-      const result: CallbackResult = {
-        code: url.searchParams.get('code') ?? undefined,
-        state: url.searchParams.get('state') ?? undefined,
-        error: url.searchParams.get('error') ?? undefined,
-        errorDescription: url.searchParams.get('error_description') ?? undefined,
-      };
+      const parsed = parseCallbackParams(url.searchParams, expectedState);
+      if (!parsed.result) {
+        res.statusCode = 400;
+        res.end('Invalid OAuth callback');
+        return;
+      }
 
-      res.statusCode = result.error ? 400 : 200;
+      res.statusCode = parsed.result.error ? 400 : 200;
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
-      const html = result.error
+      const html = parsed.result.error
         ? '<html><body><h1>xAI authorization failed.</h1>You can close this tab.</body></html>'
         : '<html><body><h1>xAI authorization received.</h1>You can close this tab.</body></html>';
-      res.end(html);
-      settle?.(result);
+      res.end(html, () => accept(parsed.result));
     } catch {
       res.statusCode = 500;
       res.end('Internal error');
@@ -241,6 +296,8 @@ function startCallbackServer(): Promise<{
         return {
           server,
           redirectUri: `http://${CALLBACK_HOST}:${CALLBACK_PORT}${CALLBACK_PATH}`,
+          acceptManualCallback: () => 'The local callback server could not start.',
+          cancel: () => {},
           waitForCallback: async () => ({
             error: XaiErrorCode.CALLBACK_BIND_FAILED,
             errorDescription,
@@ -252,20 +309,29 @@ function startCallbackServer(): Promise<{
     return {
       server,
       redirectUri,
-      waitForCallback: (timeoutMs: number) =>
-        Promise.race([
-          callbackPromise,
-          new Promise<CallbackResult>((resolve) =>
-            setTimeout(
-              () =>
-                resolve({
-                  error: XaiErrorCode.CALLBACK_TIMEOUT,
-                  errorDescription: 'Timed out waiting for xAI OAuth callback.',
-                }),
-              timeoutMs,
-            ),
-          ),
-        ]),
+      cancel: () =>
+        accept({
+          error: XaiErrorCode.AUTHORIZATION_FAILED,
+          errorDescription: 'OAuth login cancelled.',
+        }),
+      acceptManualCallback: (input: string) => {
+        if (settled) return undefined;
+        const parsed = parseManualCallback(input, expectedState);
+        if (!parsed.result) return parsed.error;
+        accept(parsed.result);
+        return undefined;
+      },
+      waitForCallback: (timeoutMs: number) => {
+        const timeout = setTimeout(
+          () =>
+            accept({
+              error: XaiErrorCode.CALLBACK_TIMEOUT,
+              errorDescription: 'Timed out waiting for xAI OAuth callback.',
+            }),
+          timeoutMs,
+        );
+        return callbackPromise.finally(() => clearTimeout(timeout));
+      },
     };
   })();
 }
@@ -277,6 +343,7 @@ async function fetchTokenResponse(
   body: URLSearchParams,
   errorCode: string,
   label: string,
+  headers: Record<string, string> = {},
 ): Promise<Response> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TOKEN_REQUEST_TIMEOUT_MS);
@@ -286,13 +353,17 @@ async function fetchTokenResponse(
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
         Accept: 'application/json',
+        'x-grok-client-version': GROK_BUILD_VERSION,
+        ...headers,
       },
       body,
       signal: controller.signal,
     });
   } catch (cause) {
     throw new XaiOAuthError(
-      `xAI ${label} failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+      `xAI ${label} failed: ${redactSensitiveData(
+        cause instanceof Error ? cause.message : String(cause),
+      )}`,
       errorCode,
     );
   } finally {
@@ -328,8 +399,27 @@ async function tokenResponsePayload(response: Response): Promise<Record<string, 
   try {
     return JSON.parse(text) as Record<string, unknown>;
   } catch {
-    return { error: `HTTP ${response.status}`, error_description: text };
+    return { error: `HTTP ${response.status}` };
   }
+}
+
+function oauthErrorCode(body: string): string | undefined {
+  try {
+    const value: unknown = JSON.parse(body);
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+    const payload = value as Record<string, unknown>;
+    return typeof payload.error === 'string' ? payload.error : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function tokenErrorDetails(response: Response) {
+  const body = await tokenResponseText(response);
+  return {
+    code: oauthErrorCode(body),
+    message: userFacingApiErrorMessage(response.status, body),
+  };
 }
 
 function credentialsFromLoginPayload(
@@ -381,8 +471,9 @@ async function exchangeCode(
     'token exchange',
   );
   if (!response.ok) {
+    const error = await tokenErrorDetails(response);
     throw new XaiOAuthError(
-      `xAI token exchange failed: ${response.status} ${await tokenResponseText(response)}`,
+      `xAI token exchange failed: ${error.message}`,
       XaiErrorCode.TOKEN_EXCHANGE_FAILED,
     );
   }
@@ -417,13 +508,16 @@ async function requestDeviceCode(deviceAuthorizationEndpoint: string) {
     new URLSearchParams({
       client_id: CLIENT_ID,
       scope: SCOPE,
+      referrer: 'open-grok-build',
     }),
     XaiErrorCode.DEVICE_AUTHORIZATION_FAILED,
     'device authorization',
+    { 'x-grok-client-surface': 'ui' },
   );
   if (!response.ok) {
+    const error = await tokenErrorDetails(response);
     throw new XaiOAuthError(
-      `xAI device authorization failed: ${response.status} ${await tokenResponseText(response)}`,
+      `xAI device authorization failed: ${error.message}`,
       XaiErrorCode.DEVICE_AUTHORIZATION_FAILED,
     );
   }
@@ -480,6 +574,7 @@ async function pollDeviceCodeToken(
       }),
       XaiErrorCode.DEVICE_AUTHORIZATION_FAILED,
       'device token exchange',
+      { 'x-grok-client-surface': 'ui' },
     );
     if (response.ok) {
       const credentials = credentialsFromLoginPayload(
@@ -500,8 +595,9 @@ async function pollDeviceCodeToken(
     if (payload.error === 'authorization_pending') return poll(intervalSeconds);
     if (payload.error === 'slow_down') return poll(intervalSeconds + 5);
     throw new XaiOAuthError(
-      `xAI device authorization failed: ${response.status} ${String(
-        payload.error_description ?? payload.error ?? 'unknown error',
+      `xAI device authorization failed: ${userFacingApiErrorMessage(
+        response.status,
+        JSON.stringify(payload),
       )}`,
       XaiErrorCode.DEVICE_AUTHORIZATION_FAILED,
       payload.error === 'access_denied' || payload.error === 'expired_token',
@@ -527,7 +623,9 @@ export type OAuthLoginCallbacks = {
 export type GrokBuildOAuthSession = {
   url: string;
   instructions: string;
-  finish: () => Promise<OAuthCredentials>;
+  submitManual?: (input: string) => string | undefined;
+  cancel?: () => void;
+  finish: (manualCallback?: string) => Promise<OAuthCredentials>;
 };
 
 /** Start loopback OAuth; call `finish` after the user completes the browser step. */
@@ -538,7 +636,7 @@ export async function beginGrokBuildOAuth(
   const { verifier, challenge } = await generatePKCE();
   const state = base64Url(crypto.getRandomValues(new Uint8Array(16)));
   const nonce = base64Url(crypto.getRandomValues(new Uint8Array(16)));
-  const callback = await startCallbackServer();
+  const callback = await startCallbackServer(state);
 
   const authUrl = new URL(discovery.authorization_endpoint);
   authUrl.searchParams.set('response_type', 'code');
@@ -554,9 +652,17 @@ export async function beginGrokBuildOAuth(
 
   return {
     url: authUrl.toString(),
-    instructions: `Authorize xAI for Grok Build, then return to OpenCode. Callback: ${callback.redirectUri}`,
-    finish: async () => {
+    instructions: `Authorize xAI for Grok Build, then return to OpenCode. Callback: ${callback.redirectUri}. For manual login, paste the callback URL or one-time code.`,
+    submitManual: callback.acceptManualCallback,
+    cancel: callback.cancel,
+    finish: async (manualCallback) => {
       try {
+        if (manualCallback) {
+          const error = callback.acceptManualCallback(manualCallback);
+          if (error) {
+            throw new XaiOAuthError(error, XaiErrorCode.AUTHORIZATION_FAILED);
+          }
+        }
         const result = await callback.waitForCallback(180_000);
 
         if (result.error) {
@@ -565,9 +671,12 @@ export async function beginGrokBuildOAuth(
             result.error === XaiErrorCode.CALLBACK_TIMEOUT
               ? result.error
               : XaiErrorCode.AUTHORIZATION_FAILED;
-          throw new XaiOAuthError(result.errorDescription ?? result.error, code);
+          throw new XaiOAuthError(
+            redactSensitiveData(result.errorDescription ?? result.error),
+            code,
+          );
         }
-        if (result.state !== state) {
+        if (result.state !== undefined && result.state !== state) {
           throw new XaiOAuthError(
             'xAI OAuth state mismatch — possible CSRF.',
             XaiErrorCode.STATE_MISMATCH,
@@ -589,7 +698,7 @@ export async function beginGrokBuildOAuth(
         credentials.discovery = discovery;
         return credentials;
       } finally {
-        callback.server.close();
+        await closeCallbackServer(callback.server);
       }
     },
   };
@@ -648,11 +757,11 @@ export async function refresh(credentials: OAuthCredentials): Promise<OAuthCrede
   );
 
   if (!response.ok) {
-    const isFatal = response.status === 400 || response.status === 401 || response.status === 403;
+    const error = await tokenErrorDetails(response);
     throw new XaiOAuthError(
-      `xAI token refresh failed: ${response.status} ${await tokenResponseText(response)}`,
+      `xAI token refresh failed: ${error.message}`,
       XaiErrorCode.REFRESH_FAILED,
-      isFatal,
+      error.code === 'invalid_grant',
     );
   }
 

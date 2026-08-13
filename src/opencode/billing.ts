@@ -1,19 +1,34 @@
 import { getBaseUrl } from '../auth/oauth.js';
+import { grokBuildIdentityHeaders } from './identity.js';
 
-interface MonthlyUsage {
+export interface MonthlyUsage {
   monthlyLimit: number;
   used: number;
   billingPeriodEnd: string;
 }
 
-interface WeeklyUsage {
+export interface WeeklyUsage {
   creditUsagePercent: number;
   billingPeriodEnd: string;
 }
 
-interface BillingUsage {
-  monthly: MonthlyUsage;
+export interface CreditsUsage {
+  creditUsagePercent: number;
+  billingPeriodEnd: string;
+  billingPeriodStart?: string;
+  periodType?: string;
+  prepaidBalance?: number;
+  onDemandCap?: number;
+  onDemandUsed?: number;
+  isUnifiedBillingUser?: boolean;
+}
+
+export interface BillingUsage {
+  credits?: CreditsUsage;
+  monthly?: MonthlyUsage;
   weekly?: WeeklyUsage;
+  onDemandEnabled?: boolean;
+  subscriptionTier?: string;
 }
 
 const RESET_FORMATTER = new Intl.DateTimeFormat('en-US', {
@@ -22,81 +37,165 @@ const RESET_FORMATTER = new Intl.DateTimeFormat('en-US', {
   hour: '2-digit',
   minute: '2-digit',
   hour12: false,
-  timeZone: 'America/Los_Angeles',
+  timeZoneName: 'short',
 });
 
+const LOCAL_TIME_ZONE = RESET_FORMATTER.resolvedOptions().timeZone;
+
 const billingHeaders = (token: string) => ({
+  ...grokBuildIdentityHeaders(),
   authorization: `Bearer ${token}`,
-  'x-xai-token-auth': 'xai-grok-cli',
   accept: 'application/json',
 });
 
-function parseMonthlyUsage(payload: unknown): MonthlyUsage {
-  if (!payload || typeof payload !== 'object') throw new Error('invalid billing payload');
-  const config = (payload as Record<string, unknown>).config;
-  if (!config || typeof config !== 'object') throw new Error('invalid billing payload');
-  const monthlyLimit = ((config as Record<string, unknown>).monthlyLimit as Record<string, unknown>)
-    ?.val;
-  const used = ((config as Record<string, unknown>).used as Record<string, unknown>)?.val;
-  const billingPeriodEnd = (config as Record<string, unknown>).billingPeriodEnd;
-  if (
-    typeof monthlyLimit !== 'number' ||
-    !Number.isFinite(monthlyLimit) ||
-    typeof used !== 'number' ||
-    !Number.isFinite(used) ||
-    typeof billingPeriodEnd !== 'string' ||
-    !Number.isFinite(new Date(billingPeriodEnd).getTime())
-  ) {
-    throw new Error('invalid billing payload');
-  }
-  return { monthlyLimit, used, billingPeriodEnd };
+export function isBillingObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-function parseWeeklyUsage(payload: unknown): WeeklyUsage | undefined {
-  if (!payload || typeof payload !== 'object') return undefined;
-  const config = (payload as Record<string, unknown>).config;
-  if (!config || typeof config !== 'object') return undefined;
-  const currentPeriod = (config as Record<string, unknown>).currentPeriod as
-    | Record<string, unknown>
-    | undefined;
-  if (currentPeriod?.type !== 'USAGE_PERIOD_TYPE_WEEKLY') return undefined;
-  const creditUsagePercent = (config as Record<string, unknown>).creditUsagePercent;
-  const billingPeriodEnd = (config as Record<string, unknown>).billingPeriodEnd;
-  if (
-    typeof creditUsagePercent !== 'number' ||
-    !Number.isFinite(creditUsagePercent) ||
-    typeof billingPeriodEnd !== 'string' ||
-    !Number.isFinite(new Date(billingPeriodEnd).getTime())
-  ) {
+export function isBillingDate(value: unknown): value is string {
+  return typeof value === 'string' && Number.isFinite(new Date(value).getTime());
+}
+
+function finiteNumber(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function centValue(value: unknown) {
+  if (!isBillingObject(value)) return undefined;
+  return finiteNumber(value.val);
+}
+
+function parseMonthlyUsage(config: Record<string, unknown>): MonthlyUsage | undefined {
+  const monthlyLimit = centValue(config.monthlyLimit);
+  const used = centValue(config.used);
+  if (monthlyLimit === undefined || used === undefined || !isBillingDate(config.billingPeriodEnd)) {
     return undefined;
   }
-  return { creditUsagePercent, billingPeriodEnd };
+  return { monthlyLimit, used, billingPeriodEnd: config.billingPeriodEnd };
 }
 
-export async function fetchBillingUsage(token: string): Promise<BillingUsage> {
-  const headers = billingHeaders(token);
-  const monthlyResponse = await fetch(`${getBaseUrl()}/billing`, { headers });
-  if (!monthlyResponse.ok) throw new Error(`billing endpoint returned ${monthlyResponse.status}`);
-  const monthly = parseMonthlyUsage(await monthlyResponse.json());
-
-  const weekly = await fetchWeeklyUsage(headers).catch(() => undefined);
-  return { monthly, weekly };
+function parseCreditsUsage(config: Record<string, unknown>): CreditsUsage | undefined {
+  const period = isBillingObject(config.currentPeriod) ? config.currentPeriod : undefined;
+  const billingPeriodEnd = period?.end ?? config.billingPeriodEnd;
+  if (!period || !isBillingDate(billingPeriodEnd)) return undefined;
+  const rawPercent = finiteNumber(config.creditUsagePercent);
+  if (config.creditUsagePercent !== undefined && rawPercent === undefined) return undefined;
+  // The credits endpoint reports the on-demand allowance instead of a raw percent;
+  // treat a missing or zero cap as 0% usage.
+  const onDemandCap = centValue(config.onDemandCap);
+  const onDemandUsed = centValue(config.onDemandUsed);
+  const creditUsagePercent =
+    rawPercent ??
+    (typeof onDemandCap === 'number' && onDemandCap > 0 && typeof onDemandUsed === 'number'
+      ? Math.min(100, Math.max(0, (onDemandUsed / onDemandCap) * 100))
+      : 0);
+  return {
+    creditUsagePercent,
+    billingPeriodEnd,
+    ...(isBillingDate(period.start) ? { billingPeriodStart: period.start } : {}),
+    ...(typeof period.type === 'string' ? { periodType: period.type } : {}),
+    ...(centValue(config.prepaidBalance) !== undefined
+      ? { prepaidBalance: centValue(config.prepaidBalance) }
+      : {}),
+    ...(centValue(config.onDemandCap) !== undefined
+      ? { onDemandCap: centValue(config.onDemandCap) }
+      : {}),
+    ...(centValue(config.onDemandUsed) !== undefined
+      ? { onDemandUsed: centValue(config.onDemandUsed) }
+      : {}),
+    ...(typeof config.isUnifiedBillingUser === 'boolean'
+      ? { isUnifiedBillingUser: config.isUnifiedBillingUser }
+      : {}),
+  };
 }
 
-async function fetchWeeklyUsage(headers: Record<string, string>): Promise<WeeklyUsage | undefined> {
-  const response = await fetch(`${getBaseUrl()}/billing?format=credits`, { headers });
+function parseBillingUsage(payload: unknown): BillingUsage | undefined {
+  if (!isBillingObject(payload) || !isBillingObject(payload.config)) return undefined;
+  const credits = parseCreditsUsage(payload.config);
+  const monthly = parseMonthlyUsage(payload.config);
+  if (!credits && !monthly) return undefined;
+  return {
+    ...(credits ? { credits } : {}),
+    ...(monthly ? { monthly } : {}),
+    ...(credits?.periodType === 'USAGE_PERIOD_TYPE_WEEKLY'
+      ? {
+          weekly: {
+            creditUsagePercent: credits.creditUsagePercent,
+            billingPeriodEnd: credits.billingPeriodEnd,
+          },
+        }
+      : {}),
+    ...(typeof payload.onDemandEnabled === 'boolean'
+      ? { onDemandEnabled: payload.onDemandEnabled }
+      : {}),
+    ...(typeof payload.subscriptionTier === 'string'
+      ? { subscriptionTier: payload.subscriptionTier }
+      : {}),
+  };
+}
+
+async function responseUsage(response: Response) {
   if (!response.ok) return undefined;
-  return parseWeeklyUsage(await response.json());
+  return response.json().then(parseBillingUsage, () => undefined);
+}
+
+async function fetchSettingsTier(
+  headers: Record<string, string>,
+  signal?: AbortSignal,
+): Promise<string | undefined> {
+  const response = await fetch(`${getBaseUrl()}/settings`, { headers, signal });
+  if (!response.ok) return undefined;
+  const payload: unknown = await response.json();
+  if (!isBillingObject(payload)) return undefined;
+  const tier = payload.subscription_tier_display;
+  return typeof tier === 'string' && tier.length > 0 ? tier : undefined;
+}
+
+export async function fetchBillingUsage(
+  token: string,
+  signal?: AbortSignal,
+): Promise<BillingUsage> {
+  const headers = billingHeaders(token);
+  const [monthlyResult, credits, subscriptionTier] = await Promise.all([
+    fetch(`${getBaseUrl()}/billing`, { headers, signal }).then(
+      (response) => ({ response }),
+      (error: unknown) => ({ error }),
+    ),
+    fetch(`${getBaseUrl()}/billing?format=credits`, { headers, signal })
+      .then(responseUsage)
+      .catch((error: unknown) => {
+        if (signal?.aborted) throw error;
+        return undefined;
+      }),
+    fetchSettingsTier(headers, signal).catch((error: unknown) => {
+      if (signal?.aborted) throw error;
+      return undefined;
+    }),
+  ]);
+  const monthly =
+    'response' in monthlyResult ? await responseUsage(monthlyResult.response) : undefined;
+  if (!monthly?.monthly && !credits?.credits) {
+    if ('error' in monthlyResult) throw monthlyResult.error;
+    if (!monthlyResult.response.ok) {
+      throw new Error(`billing endpoint returned ${monthlyResult.response.status}`);
+    }
+    throw new Error('invalid billing payload');
+  }
+  return {
+    ...monthly,
+    ...credits,
+    ...(subscriptionTier ? { subscriptionTier } : {}),
+  };
 }
 
 function formatReset(iso: string): string {
   const parts = RESET_FORMATTER.formatToParts(new Date(iso));
-  const part = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
+  const part = (type: string) => parts.find((value) => value.type === type)?.value ?? '';
   const hour = part('hour') === '24' ? '00' : part('hour');
-  return `${part('month')} ${part('day')}, ${hour}:${part('minute')} PT`;
+  return `${part('month')} ${part('day')}, ${hour}:${part('minute')} ${part('timeZoneName')} ${LOCAL_TIME_ZONE}`;
 }
 
-const detail = (label: string, value: string) => `      ${label.padEnd(9)}  ${value}`;
+const detail = (label: string, value: string) => `   ${label.padEnd(11)}${value}`;
 
 export function formatQuota(usage: BillingUsage | undefined): string[] {
   if (!usage) {
@@ -105,30 +204,20 @@ export function formatQuota(usage: BillingUsage | undefined): string[] {
       '    billing data unavailable — try again, or run /connect grok-build if not yet authenticated',
     ];
   }
-
-  const monthlyPercent = Math.round((usage.monthly.used / usage.monthly.monthlyLimit) * 100);
-  const lines = [
-    '  Usage:',
-    '    Monthly',
-    detail(
-      'Credits',
-      `${usage.monthly.used.toLocaleString()} / ${usage.monthly.monthlyLimit.toLocaleString()} used  ${monthlyPercent}%`,
-    ),
-    detail(
-      'Remaining',
-      `${(usage.monthly.monthlyLimit - usage.monthly.used).toLocaleString()} credits`,
-    ),
-    detail('Reset', formatReset(usage.monthly.billingPeriodEnd)),
+  const tier = usage.subscriptionTier ? ` (${usage.subscriptionTier})` : '';
+  const weekly =
+    usage.weekly ??
+    (usage.credits?.periodType === 'USAGE_PERIOD_TYPE_WEEKLY' ? usage.credits : undefined);
+  if (!weekly) return [`Weekly Limit${tier}`, '    weekly usage unavailable'];
+  return [
+    `Weekly Limit${tier}`,
+    detail('Used', `${Math.round(weekly.creditUsagePercent)}%`),
+    detail('Reset', formatReset(weekly.billingPeriodEnd)),
   ];
+}
 
-  if (usage.weekly) {
-    lines.push(
-      '',
-      '    Weekly',
-      detail('Limit', `${Math.round(usage.weekly.creditUsagePercent)}% used`),
-      detail('Reset', formatReset(usage.weekly.billingPeriodEnd)),
-    );
-  }
-
-  return lines;
+export function remainingQuotaFraction(usage: BillingUsage) {
+  if (usage.subscriptionTier?.trim().toLocaleLowerCase() === 'free') return undefined;
+  if (!usage.credits) return undefined;
+  return Math.min(1, Math.max(0, 1 - usage.credits.creditUsagePercent / 100));
 }
