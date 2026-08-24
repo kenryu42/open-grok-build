@@ -80,8 +80,8 @@ function parseCreditsUsage(config: Record<string, unknown>): CreditsUsage | unde
   if (!period || !isBillingDate(billingPeriodEnd)) return undefined;
   const rawPercent = finiteNumber(config.creditUsagePercent);
   if (config.creditUsagePercent !== undefined && rawPercent === undefined) return undefined;
-  // The credits endpoint reports the on-demand allowance instead of a raw percent;
-  // treat a missing or zero cap as 0% usage.
+  // Prefer the server-reported weekly percentage. Older responses can require
+  // calculating it from the on-demand allowance.
   const onDemandCap = centValue(config.onDemandCap);
   const onDemandUsed = centValue(config.onDemandUsed);
   const creditUsagePercent =

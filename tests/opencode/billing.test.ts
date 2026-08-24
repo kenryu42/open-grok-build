@@ -36,8 +36,10 @@ describe('billing', () => {
       const url = input.toString();
       if (url.endsWith('/settings')) return settingsJsonResponse('X Premium');
       return url.includes('format=credits')
-        ? creditsJsonResponse(100, 35, '2026-07-14T00:19:56+00:00', {
+        ? creditsJsonResponse(0, 0, '2026-07-14T00:19:56+00:00', {
+            creditUsagePercent: 13,
             prepaidBalance: { val: 500 },
+            productUsage: [{ product: 'GrokBuild', usagePercent: 13 }],
             isUnifiedBillingUser: true,
           })
         : billingJsonResponse(4000, 172, '2026-08-01T00:00:00+00:00');
@@ -65,23 +67,23 @@ describe('billing', () => {
         billingPeriodEnd: '2026-08-01T00:00:00+00:00',
       },
       credits: {
-        creditUsagePercent: 35,
+        creditUsagePercent: 13,
         billingPeriodStart: '2026-07-07T00:19:56+00:00',
         billingPeriodEnd: '2026-07-14T00:19:56+00:00',
         periodType: 'USAGE_PERIOD_TYPE_WEEKLY',
         prepaidBalance: 500,
-        onDemandCap: 100,
-        onDemandUsed: 35,
+        onDemandCap: 0,
+        onDemandUsed: 0,
         isUnifiedBillingUser: true,
       },
       weekly: {
-        creditUsagePercent: 35,
+        creditUsagePercent: 13,
         billingPeriodEnd: '2026-07-14T00:19:56+00:00',
       },
       subscriptionTier: 'X Premium',
     });
     expect(formatQuota(usage).join('\n')).toContain('Weekly Limit (X Premium)');
-    expect(formatQuota(usage).join('\n')).toContain('Used       35%');
+    expect(formatQuota(usage).join('\n')).toContain('Used       13%');
   });
 
   it('treats an omitted fresh-period percentage as zero', async () => {
