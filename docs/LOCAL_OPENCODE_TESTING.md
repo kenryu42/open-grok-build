@@ -27,7 +27,9 @@ In the project you want to test from (this repo works too), add:
 
 A plain string works as well; `{ "package": … }` additionally accepts an `options` object. Use an **absolute** path, or one starting with `./` / `../` relative to the config file. The target must be the package **directory** — a path to a single file is skipped with `configured plugin path must be a directory` in the log.
 
-One entry is enough for both halves: OpenCode resolves `.` (server) and `./tui` from the package exports.
+One entry is enough for both halves. For a directory target OpenCode does **not** read `package.json` exports; it resolves
+`<directory>/index`, `<directory>/tui` and `<directory>/rpc`, which this repo provides as root entry files that re-export
+`src/opencode/`. A directory without them is skipped silently, with no log line at all.
 
 **Verify**
 
@@ -86,6 +88,7 @@ opencode plugin list
 | Symptom | What to check |
 |--------|----------------|
 | Plugin not listed / load error | Path in `plugins` points at the package directory; `bun install` ran in this repo; check the OpenCode log. |
+| Plugin ignored with no log line | The directory has no `index.ts` at its root. Path targets resolve `index`/`tui`/`rpc` beside `package.json`, not the `exports` map. |
 | `configured plugin path must be a directory` | The entry points at a file. Use the folder that contains `package.json`. |
 | Slash commands missing | The TUI entry comes from the same `plugins` entry; restart OpenCode and look for a TUI plugin failure in the plugin dialog. |
 | Provider missing after connect | The provider is registered in `setup`; a failed server plugin means no provider. Fix the load error first. |

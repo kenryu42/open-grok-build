@@ -20,8 +20,11 @@
   },
   "files": [
     "README.md",
+    "index.ts",
+    "rpc.ts",
     "src",
-    "tsconfig.json"
+    "tsconfig.json",
+    "tui.ts"
   ],
   "scripts": {
     "test": "vitest run --reporter=agent",
