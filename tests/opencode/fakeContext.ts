@@ -84,13 +84,21 @@ export function fakeContext(options: FakeContextOptions = {}) {
   const connections = options.connections ?? [];
   const credentials = options.credentials ?? {};
   const directory = options.directory ?? process.cwd();
-  const transforms = { provider: [] as Callback[], integration: [] as Callback[] };
+  const transforms = {
+    provider: [] as Callback[],
+    integration: [] as Callback[],
+    tool: [] as Callback[],
+    command: [] as Callback[],
+  };
+  const reloads = { tool: 0, command: 0 };
   const hooks = new Map<string, Hook>();
   const storage = new Map<string, unknown>();
   const calls = { integrationGet: 0, resolve: [] as FakeConnection[] };
   const rpc: RpcRecording = {};
   const events = eventStream();
-  const synthetic = vi.fn(() => Promise.resolve(undefined));
+  const synthetic = vi.fn((_input: { sessionID: string; text: string }) =>
+    Promise.resolve(undefined),
+  );
   const registration = { dispose: () => Promise.resolve(undefined) };
   const record = (list: Callback[]) => (callback: Callback) => {
     list.push(callback);
@@ -121,6 +129,21 @@ export function fakeContext(options: FakeContextOptions = {}) {
           }
           return Promise.resolve(credentials[connection.id]);
         },
+      },
+    },
+    tool: {
+      transform: record(transforms.tool),
+      reload: () => {
+        reloads.tool += 1;
+        return Promise.resolve(undefined);
+      },
+      list: () => Promise.resolve([]),
+    },
+    command: {
+      transform: record(transforms.command),
+      reload: () => {
+        reloads.command += 1;
+        return Promise.resolve(undefined);
       },
     },
     session: {
@@ -166,6 +189,7 @@ export function fakeContext(options: FakeContextOptions = {}) {
     events,
     calls,
     rpc,
+    reloads,
     synthetic,
   };
 }
@@ -211,12 +235,57 @@ export function fakeIntegrationEditor() {
   };
 }
 
+export interface FakeTool {
+  name: string;
+  description: string;
+  execute: (
+    input: Record<string, unknown>,
+    context: { sessionID: string; signal?: AbortSignal },
+  ) => Promise<{ content?: unknown }>;
+}
+
+export interface FakeCommand {
+  name: string;
+  description?: string;
+  execute: (invocation: { sessionID: string; prompt: { text: string } }) => Promise<void>;
+}
+
+export function fakeToolEditor() {
+  const tools = new Map<string, FakeTool>();
+  return {
+    tools,
+    editor: {
+      add: (tool: FakeTool) => {
+        tools.set(tool.name, tool);
+      },
+    },
+  };
+}
+
+export function fakeCommandEditor() {
+  const commands = new Map<string, FakeCommand>();
+  return {
+    commands,
+    editor: {
+      add: (command: FakeCommand) => {
+        commands.set(command.name, command);
+      },
+    },
+  };
+}
+
 export function applyTransforms(fake: FakeContext) {
-  const provider = fakeProviderEditor();
-  const integration = fakeIntegrationEditor();
-  for (const callback of fake.transforms.provider) callback(provider.editor as never);
-  for (const callback of fake.transforms.integration) callback(integration.editor as never);
-  return { provider, integration };
+  const editors = {
+    provider: fakeProviderEditor(),
+    integration: fakeIntegrationEditor(),
+    tool: fakeToolEditor(),
+    command: fakeCommandEditor(),
+  };
+  for (const callback of fake.transforms.provider) callback(editors.provider.editor as never);
+  for (const callback of fake.transforms.integration) callback(editors.integration.editor as never);
+  for (const callback of fake.transforms.tool) callback(editors.tool.editor as never);
+  for (const callback of fake.transforms.command) callback(editors.command.editor as never);
+  return editors;
 }
 
 export function grokModelEvent(modelID = 'grok-4.7') {

@@ -1,4 +1,5 @@
 import { Plugin } from '@opencode/plugin';
+import { registerImagine } from '../imagine/register.js';
 import { GrokBuildAccounts } from './accounts.js';
 import { registerGrokBuildIntegration } from './integration.js';
 import { grokBuildModels, grokBuildProvider } from './providerModels.js';
@@ -44,6 +45,13 @@ async function setup(ctx: Plugin.Context) {
       return usageReport(deps, account, context.signal);
     },
     'quotas.refresh': (input, context) => quotasRefresh(deps, input.keys, context.signal),
+  });
+  await registerImagine({
+    ctx,
+    token: async (sessionID) => {
+      const account = await accounts.selected(sessionID);
+      return account ? accounts.token(account) : undefined;
+    },
   });
 
   const controller = new AbortController();

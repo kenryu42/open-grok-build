@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { loadConfig } from '../../src/config.js';
+import { DEFAULT_CONFIG, loadConfig, saveConfig } from '../../src/config.js';
 import plugin from '../../src/opencode/plugin.js';
 import { conversationStorageKey } from '../../src/opencode/requests.js';
 import { useTempOpenCodeHome } from '../stateTestHelpers.js';
@@ -125,6 +125,21 @@ describe('Open Grok Build v2 plugin', () => {
 
     await rpc['accounts.list']({} as never, rpcErrorContext() as never);
     expect(fake.calls.integrationGet).toBeGreaterThan(1);
+  });
+
+  it('registers the Imagine tool and its commands', async () => {
+    const { fake } = await setup();
+
+    const editors = applyTransforms(fake);
+
+    expect([...editors.tool.tools.keys()]).toEqual(['image_gen']);
+    expect([...editors.command.commands.keys()]).toEqual([
+      'grok-build-imagine',
+      'grok-build-imagine:tool',
+    ]);
+
+    saveConfig({ ...DEFAULT_CONFIG, imagine: { enabled: false } });
+    expect([...applyTransforms(fake).tool.tools.keys()]).toEqual([]);
   });
 
   it('stops listening for events when the plugin is disposed', async () => {
