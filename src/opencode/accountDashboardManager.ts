@@ -1,172 +1,207 @@
-import * as oauth from '../auth/oauth.js';
-import { GROK_BUILD_ACCOUNT_ID, loadConfig } from '../config.js';
-import {
-  type AccountSnapshot,
-  buildAccountsSnapshot,
-  GrokBuildAccountManager,
-  refreshAccountQuotas,
-} from './accounts.js';
+import { randomUUID } from 'node:crypto';
+import { credentialID } from './accounts.js';
 import type {
   AccountDashboardManager,
   DashboardAccount,
   DashboardLoginInteraction,
 } from './dashboard/server.js';
-import { isCachedQuotaFresh, loadQuotaCache, removeQuotaUsage } from './quotaCache.js';
+import { GROK_BUILD_INTEGRATION_ID } from './integration.js';
+import { removeQuotaUsage } from './quotaCache.js';
+import type { AccountsListOutput } from './rpc.js';
 
-export interface AccountRuntime {
-  authenticatedProviders(): string[];
-  environmentProviders(): string[];
-  token(provider: string): Promise<string | undefined>;
-  setAuth(
-    provider: string,
-    auth: { type: 'oauth'; access: string; refresh: string; expires: number },
-  ): Promise<unknown>;
-  removeAuth(provider: string): Promise<unknown>;
-  activate(provider: string): void;
-  rotation: { clearRecentExhaustion(provider: string): void };
+export type OAuthAttemptStatus =
+  | { status: 'pending' }
+  | { status: 'complete' }
+  | { status: 'failed'; message: string }
+  | { status: 'expired' };
+
+export interface DashboardHost {
+  accountsList(): Promise<AccountsListOutput>;
+  accountsSelect(key: string): Promise<unknown>;
+  quotasRefresh(
+    keys: string[] | undefined,
+    signal: AbortSignal,
+  ): Promise<{ updated: number; failed: string[] }>;
+  credential: {
+    activate(input: { credentialID: string }): Promise<void>;
+    update(input: { credentialID: string; label: string }): Promise<void>;
+    remove(input: { credentialID: string }): Promise<void>;
+  };
+  oauth: {
+    connect(input: { integrationID: string; methodID: string; label?: string }): Promise<{
+      data: { attemptID: string; url: string; instructions: string; mode: 'auto' | 'code' };
+    }>;
+    status(input: {
+      integrationID: string;
+      attemptID: string;
+    }): Promise<{ data: OAuthAttemptStatus }>;
+    cancel(input: { integrationID: string; attemptID: string }): Promise<void>;
+  };
 }
 
-function dashboardAccount(account: AccountSnapshot): DashboardAccount {
+export const PENDING_KEY_PREFIX = 'pending:';
+
+const isPending = (key: string) => key.startsWith(PENDING_KEY_PREFIX);
+
+function pendingAccount(key: string, label: string): DashboardAccount {
   return {
-    provider: account.provider,
-    label: account.label,
-    status: account.status,
-    authenticated: account.authenticated,
-    active: account.active,
-    environment: account.environment,
-    ...(account.quota?.subscriptionTier ? { plan: account.quota.subscriptionTier } : {}),
-    ...(account.quota
-      ? { quota: { ...account.quota, fresh: isCachedQuotaFresh(account.quota) } }
-      : {}),
+    provider: key,
+    label,
+    status: 'login-required',
+    authenticated: false,
+    active: false,
+    environment: false,
   };
 }
 
 export class OpenCodeAccountDashboardManager implements AccountDashboardManager {
-  private readonly accounts = new GrokBuildAccountManager();
+  private readonly pending = new Map<string, string>();
 
-  constructor(private readonly runtime: AccountRuntime) {}
+  constructor(
+    private readonly host: DashboardHost,
+    private readonly pollIntervalMs = 1_000,
+  ) {}
 
-  snapshot() {
-    const environment = new Set(this.runtime.environmentProviders());
+  async snapshot() {
+    const listed = await this.host.accountsList();
     return {
-      accounts: buildAccountsSnapshot(
-        loadConfig().config,
-        this.runtime.authenticatedProviders(),
-        loadQuotaCache(),
-        process.env.GROK_BUILD_OAUTH_TOKEN ? GROK_BUILD_ACCOUNT_ID : undefined,
-      ).accounts.map((account) =>
-        dashboardAccount({
-          ...account,
-          environment: account.environment || environment.has(account.provider),
+      accounts: [
+        ...listed.accounts.map((account): DashboardAccount => {
+          const quota = account.quota;
+          return {
+            provider: account.key,
+            label: account.label,
+            status: account.selected ? 'active' : 'authenticated',
+            authenticated: true,
+            active: account.selected,
+            environment: account.environment,
+            ...(quota?.subscriptionTier ? { plan: quota.subscriptionTier } : {}),
+            ...(quota
+              ? {
+                  quota: {
+                    updatedAt: quota.updatedAt,
+                    fresh: quota.fresh,
+                    ...(quota.credits ? { credits: quota.credits } : {}),
+                    ...(quota.monthly ? { monthly: quota.monthly } : {}),
+                    ...(quota.weekly ? { weekly: quota.weekly } : {}),
+                  },
+                }
+              : {}),
+          };
         }),
-      ),
+        ...[...this.pending].map(([key, label]) => pendingAccount(key, label)),
+      ],
     };
   }
 
   add(label: string) {
-    const account = this.accounts.add(label);
-    const snapshot = buildAccountsSnapshot(
-      loadConfig().config,
-      this.runtime.authenticatedProviders(),
-    ).accounts.find((candidate) => candidate.provider === account.provider);
-    if (!snapshot) throw new Error(`Could not add Grok Build account: ${account.provider}`);
-    return dashboardAccount(snapshot);
+    const key = `${PENDING_KEY_PREFIX}${randomUUID()}`;
+    this.pending.set(key, label.trim());
+    return pendingAccount(key, label.trim());
   }
 
-  rename(provider: string, label: string) {
-    this.accounts.rename(provider, label);
-  }
-
-  activate(provider: string) {
-    this.runtime.activate(provider);
-  }
-
-  async logout(provider: string) {
-    if (this.runtime.environmentProviders().includes(provider)) {
-      throw new Error(`${provider} uses environment authentication and cannot be logged out here.`);
+  async rename(key: string, label: string) {
+    const trimmed = label.trim();
+    if (!trimmed) throw new Error('Account labels cannot be empty.');
+    if (isPending(key)) {
+      this.pending.set(key, trimmed);
+      return;
     }
-    this.accounts.bump(provider);
-    await this.runtime.removeAuth(provider);
-    await removeQuotaUsage(provider);
+    const id = credentialID(key);
+    if (!id) throw new Error('Environment accounts cannot be renamed here.');
+    await this.host.credential.update({ credentialID: id, label: trimmed });
   }
 
-  async remove(provider: string) {
-    if (provider === GROK_BUILD_ACCOUNT_ID) {
-      throw new Error('The primary Grok Build account cannot be removed.');
+  async activate(key: string) {
+    if (isPending(key)) throw new Error('Log in before selecting this account.');
+    await this.host.accountsSelect(key);
+    const id = credentialID(key);
+    if (id) await this.host.credential.activate({ credentialID: id });
+  }
+
+  logout(key: string) {
+    return this.remove(key);
+  }
+
+  async remove(key: string) {
+    if (isPending(key)) {
+      this.pending.delete(key);
+      return;
     }
-    if (this.runtime.environmentProviders().includes(provider)) {
-      throw new Error(`${provider} uses environment authentication and cannot be removed here.`);
-    }
-    await this.runtime.removeAuth(provider);
-    this.accounts.remove(provider);
-    await removeQuotaUsage(provider);
+    const id = credentialID(key);
+    if (!id) throw new Error('Environment accounts cannot be removed here. Unset the variable.');
+    await this.host.credential.remove({ credentialID: id });
+    await removeQuotaUsage(key);
   }
 
-  async refresh(signal: AbortSignal) {
-    const authenticated = new Set(this.runtime.authenticatedProviders());
-    return refreshAccountQuotas({
-      accounts: loadConfig().config.accounts.items.filter((account) =>
-        authenticated.has(account.provider),
-      ),
-      resolveToken: (provider) => this.runtime.token(provider),
-      signal: AbortSignal.any([signal, AbortSignal.timeout(30_000)]),
-      manager: this.accounts,
-    });
-  }
-
-  async refreshOne(provider: string, signal: AbortSignal) {
-    const account = loadConfig().config.accounts.items.find(
-      (candidate) => candidate.provider === provider,
+  refresh(signal: AbortSignal) {
+    return this.host.quotasRefresh(
+      undefined,
+      AbortSignal.any([signal, AbortSignal.timeout(30_000)]),
     );
-    if (!account) throw new Error(`Unknown Grok Build account: ${provider}`);
-    const result = await refreshAccountQuotas({
-      accounts: [account],
-      resolveToken: (credential) => this.runtime.token(credential),
-      signal: AbortSignal.any([signal, AbortSignal.timeout(30_000)]),
-      manager: this.accounts,
-    });
-    if (!result.updated) throw new Error(`Quota refresh failed for ${provider}.`);
   }
 
-  async login(provider: string, interaction: DashboardLoginInteraction) {
-    if (!loadConfig().config.accounts.items.some((account) => account.provider === provider)) {
-      throw new Error(`Unknown Grok Build account: ${provider}`);
-    }
-    if (this.runtime.environmentProviders().includes(provider)) {
-      throw new Error(`${provider} uses environment authentication and cannot sign in here.`);
-    }
-    const session = await oauth.beginGrokBuildOAuth('open-grok-build-dashboard');
-    interaction.onAuthorizationUrl(session.url);
+  async refreshOne(key: string, signal: AbortSignal) {
+    const result = await this.host.quotasRefresh(
+      [key],
+      AbortSignal.any([signal, AbortSignal.timeout(30_000)]),
+    );
+    if (!result.updated) throw new Error(`Quota refresh failed for ${key}.`);
+  }
+
+  async login(key: string, interaction: DashboardLoginInteraction) {
+    const label = await this.loginLabel(key);
+    const attempt = (
+      await this.host.oauth.connect({
+        integrationID: GROK_BUILD_INTEGRATION_ID,
+        methodID: 'browser',
+        ...(label ? { label } : {}),
+      })
+    ).data;
+    interaction.onAuthorizationUrl(attempt.url);
     interaction.onProgress('Waiting for xAI authorization…');
-    const cancel = () => session.cancel?.();
-    interaction.signal.addEventListener('abort', cancel, { once: true });
-    void (async () => {
-      while (session.submitManual && !interaction.signal.aborted) {
-        const code = await interaction.waitForManualCode();
-        if (interaction.signal.aborted) return;
-        const error = session.submitManual(code);
-        if (!error) return;
-        interaction.onProgress(error);
-      }
-    })().catch(() => undefined);
-    try {
-      const credentials = await session.finish();
-      if (interaction.signal.aborted) return;
-      await this.runtime.setAuth(provider, {
-        type: 'oauth',
-        access: credentials.access,
-        refresh: credentials.refresh,
-        expires: credentials.expires,
+    const completed = await this.poll(attempt.attemptID, interaction.signal);
+    if (!completed) {
+      await this.host.oauth.cancel({
+        integrationID: GROK_BUILD_INTEGRATION_ID,
+        attemptID: attempt.attemptID,
       });
-      if (interaction.signal.aborted) {
-        await this.runtime.removeAuth(provider);
-        return;
-      }
-      this.accounts.bump(provider);
-      this.runtime.rotation.clearRecentExhaustion(provider);
-      interaction.onProgress('Login complete.');
-    } finally {
-      interaction.signal.removeEventListener('abort', cancel);
+      return;
     }
+    this.pending.delete(key);
+    const id = credentialID(key);
+    if (id) {
+      await this.host.credential.remove({ credentialID: id });
+      await removeQuotaUsage(key);
+    }
+    interaction.onProgress('Login complete.');
+  }
+
+  private async loginLabel(key: string) {
+    const pending = this.pending.get(key);
+    if (pending !== undefined) return pending;
+    if (!credentialID(key)) {
+      throw new Error('Environment accounts cannot sign in here.');
+    }
+    const account = (await this.snapshot()).accounts.find(
+      (candidate) => candidate.provider === key,
+    );
+    if (!account) throw new Error(`Unknown Grok Build account: ${key}`);
+    return account.label;
+  }
+
+  private async poll(attemptID: string, signal: AbortSignal): Promise<boolean> {
+    if (signal.aborted) return false;
+    const status = (
+      await this.host.oauth.status({ integrationID: GROK_BUILD_INTEGRATION_ID, attemptID })
+    ).data;
+    if (status.status === 'complete') return true;
+    if (status.status === 'failed') throw new Error(status.message);
+    if (status.status === 'expired') {
+      throw new Error('Login expired. Start again from the dashboard.');
+    }
+    if (signal.aborted) return false;
+    await new Promise((resolve) => setTimeout(resolve, this.pollIntervalMs));
+    return this.poll(attemptID, signal);
   }
 }

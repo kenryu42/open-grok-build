@@ -1,267 +1,137 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import * as oauth from '../../src/auth/oauth.js';
-import { grokBuildProviderConfig } from '../../src/opencode/grokModels.js';
-import { OpenGrokBuildPlugin } from '../../src/opencode/plugin.js';
+import { describe, expect, it, vi } from 'vitest';
+import { loadConfig } from '../../src/config.js';
+import plugin from '../../src/opencode/plugin.js';
+import { conversationStorageKey } from '../../src/opencode/requests.js';
 import { useTempOpenCodeHome } from '../stateTestHelpers.js';
-
-type TaskExecuteBeforeInput = { tool: string; sessionID: string; callID: string };
-type TaskExecuteBeforeOutput = { args: Record<string, unknown> };
-
-async function triggerTaskExecuteBefore(
-  hooks: Awaited<ReturnType<typeof OpenGrokBuildPlugin>>,
-  tool: string,
-  args: Record<string, unknown>,
-): Promise<Record<string, unknown>> {
-  const output: TaskExecuteBeforeOutput = { args };
-  const fn = (hooks as Record<string, unknown>)['tool.execute.before'] as
-    | ((input: TaskExecuteBeforeInput, output: TaskExecuteBeforeOutput) => Promise<void>)
-    | undefined;
-  if (fn) await fn({ tool, sessionID: 'ses_test', callID: 'call_1' }, output);
-  return output.args;
-}
-
-function testPluginInput(overrides: { authSet?: ReturnType<typeof vi.fn> } = {}) {
-  return {
-    client: {
-      auth: {
-        set: overrides.authSet ?? vi.fn(async () => ({ data: true })),
-      },
-    } as never,
-    project: {} as never,
-    directory: process.cwd(),
-    worktree: process.cwd(),
-    experimental_workspace: { register: () => {} },
-    serverUrl: new URL('http://localhost:4096'),
-    $: undefined as never,
-  };
-}
+import {
+  applyTransforms,
+  CRED_A,
+  CRED_B,
+  exhaustSession,
+  type FakeConnection,
+  type FakeContext,
+  failRequest,
+  rpcErrorContext,
+  serveRequest,
+  tokenContext,
+} from './fakeContext.js';
 
 const useTempHome = useTempOpenCodeHome('open-grok-build-plugin-');
+const SESSION = 'ses_1';
 
-beforeEach(() => {
+async function setup(connections: FakeConnection[] = [CRED_A]) {
   useTempHome();
-});
+  const fake = tokenContext(connections);
+  const cleanup = await plugin.setup(fake.ctx);
+  return { fake, cleanup };
+}
 
-afterEach(() => {
-  vi.restoreAllMocks();
-  vi.unstubAllEnvs();
-  vi.unstubAllGlobals();
-  vi.useRealTimers();
-});
+function handlers(fake: FakeContext) {
+  const registered = fake.rpc.handlers;
+  if (!registered) throw new Error('RPC handlers were not registered');
+  return registered;
+}
 
-describe('OpenGrokBuildPlugin', () => {
-  it('registers grok-build provider config without custom tools', async () => {
-    const hooks = await OpenGrokBuildPlugin(testPluginInput());
+describe('Open Grok Build v2 plugin', () => {
+  it('identifies itself and registers the provider catalog', async () => {
+    const { fake } = await setup();
 
-    const cfg: { provider?: Record<string, unknown> } = {};
-    await hooks.config?.(cfg);
-    expect(cfg.provider?.['grok-build']).toBeDefined();
-
-    const providerCfg = grokBuildProviderConfig();
-    expect(providerCfg.api).toBe('https://cli-chat-proxy.grok.com/v1');
-    expect(Object.keys(providerCfg.models)).toContain('grok-build');
-    expect(await hooks.provider?.models({ models: {} } as never)).toHaveProperty('grok-build');
-
-    expect(hooks.tool).toBeUndefined();
-  });
-
-  it('exposes grok-build OAuth auth hook', async () => {
-    const hooks = await OpenGrokBuildPlugin(testPluginInput());
-    expect(hooks.auth?.provider).toBe('grok-build');
-    expect(hooks.auth?.methods).toEqual([
-      expect.objectContaining({ label: 'Browser login (default)', type: 'oauth' }),
-      expect.objectContaining({ label: 'Device login (headless)', type: 'oauth' }),
-      expect.objectContaining({ label: 'Paste callback/code (remote)', type: 'oauth' }),
-    ]);
-  });
-
-  it('does not register grok-build-usage as a server slash command', async () => {
-    const hooks = await OpenGrokBuildPlugin(testPluginInput());
-    const cfg: { command?: Record<string, unknown> } = {};
-    await hooks.config?.(cfg);
-    expect(cfg.command?.['grok-build-usage']).toBeUndefined();
-    expect(hooks['command.execute.before']).toBeUndefined();
-  });
-
-  describe('auth.loader refresh', () => {
-    async function withAuthLoader(opts: {
-      authSet?: ReturnType<typeof vi.fn>;
-      refresh: {
-        access: string;
-        refresh: string;
-        expires: number;
-        tokenEndpoint?: string;
-      };
-      fetchMock: ReturnType<typeof vi.fn<typeof fetch>>;
-      authExtra?: Record<string, unknown>;
-      run: (ctx: {
-        loaded: { fetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> };
-        authState: {
-          type: 'oauth';
-          access: string;
-          refresh: string;
-          expires: number;
-          [key: string]: unknown;
-        };
-        refreshSpy: ReturnType<typeof vi.spyOn>;
-        authSet: ReturnType<typeof vi.fn>;
-      }) => Promise<void>;
-    }) {
-      vi.useFakeTimers();
-      vi.setSystemTime(1_700_000_000_000);
-
-      const authState = {
-        type: 'oauth' as const,
-        access: 'old-access',
-        refresh: 'old-refresh',
-        expires: 1_700_000_000_000 - 1,
-        ...opts.authExtra,
-      };
-      const authSet =
-        opts.authSet ??
-        vi.fn(async (args: { body: Record<string, unknown> }) => {
-          Object.assign(authState, args.body);
-          return { data: true };
-        });
-      const refreshSpy = vi.spyOn(oauth, 'refresh').mockResolvedValue(opts.refresh);
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = opts.fetchMock;
-
-      try {
-        const hooks = await OpenGrokBuildPlugin(testPluginInput({ authSet }));
-        const loaded = await hooks.auth?.loader?.(async () => authState as never, {} as never);
-        await opts.run({ loaded: loaded ?? {}, authState, refreshSpy, authSet });
-      } finally {
-        globalThis.fetch = originalFetch;
-      }
-    }
-
-    it('refreshes expired tokens, persists schema-legal fields, and retries 401 once', async () => {
-      let apiCalls = 0;
-      const fetchMock = vi.fn<typeof fetch>(async (_input, init) => {
-        apiCalls += 1;
-        const authHeader = new Headers(init?.headers).get('authorization');
-        if (apiCalls === 1) {
-          expect(authHeader).toBe('Bearer new-access');
-          return new Response('expired', { status: 401 });
-        }
-        expect(authHeader).toBe('Bearer new-access');
-        return new Response('ok', { status: 200 });
-      });
-
-      await withAuthLoader({
-        authExtra: { tokenEndpoint: 'https://auth.x.ai/oauth/token' },
-        refresh: {
-          access: 'new-access',
-          refresh: 'new-refresh',
-          expires: 1_700_000_480_000,
-          tokenEndpoint: 'https://auth.x.ai/oauth/token',
-        },
-        fetchMock,
-        run: async ({ loaded, authState, refreshSpy, authSet }) => {
-          const response = await loaded.fetch?.('https://cli-chat-proxy.grok.com/v1/responses', {
-            method: 'POST',
-          });
-
-          expect(response?.status).toBe(200);
-          expect(refreshSpy).toHaveBeenCalledTimes(2);
-          expect(authSet).toHaveBeenCalled();
-          expect(authSet.mock.calls[0]?.[0]?.body).toEqual({
-            type: 'oauth',
-            access: 'new-access',
-            refresh: 'new-refresh',
-            expires: 1_700_000_480_000,
-          });
-          expect(authState.refresh).toBe('new-refresh');
-          expect(apiCalls).toBe(2);
-        },
-      });
+    expect(plugin.id).toBe('open-grok-build');
+    const transforms = applyTransforms(fake);
+    const added = transforms.provider.added[0];
+    if (!added) throw new Error('no provider registered');
+    expect(added.info).toMatchObject({
+      id: 'grok-build',
+      name: 'Grok Build',
+      package: '@opencode/ai/providers/xai',
+      settings: { transport: 'http' },
     });
-
-    it('reuses process-local rotated refresh tokens even when auth.set fails', async () => {
-      const authSet = vi.fn(async () => {
-        throw new Error('auth store write failed');
-      });
-      const fetchMock = vi.fn<typeof fetch>(async () => new Response('ok', { status: 200 }));
-
-      await withAuthLoader({
-        authSet,
-        refresh: {
-          access: 'new-access',
-          refresh: 'rotated-refresh',
-          expires: 1_700_000_480_000,
-          tokenEndpoint: 'https://auth.x.ai/oauth/token',
-        },
-        fetchMock,
-        run: async ({ loaded, refreshSpy }) => {
-          await loaded.fetch?.('https://cli-chat-proxy.grok.com/v1/responses');
-          // Still unexpired in process-local cache — must not re-hit oauth.refresh
-          // with the stale disk refresh token.
-          await loaded.fetch?.('https://cli-chat-proxy.grok.com/v1/responses');
-
-          expect(refreshSpy).toHaveBeenCalledOnce();
-          expect(authSet).toHaveBeenCalledOnce();
-          expect(fetchMock).toHaveBeenCalledTimes(2);
-          expect(new Headers(fetchMock.mock.calls[1]?.[1]?.headers).get('authorization')).toBe(
-            'Bearer new-access',
-          );
-        },
-      });
-    });
+    expect(added.models).toHaveLength(10);
+    expect(
+      added.models.find((model) => model.id === 'grok-4.7')?.variants.map((v) => v.id),
+    ).toEqual(['low', 'medium', 'high', 'xhigh']);
   });
 
-  describe('tool.execute.before', () => {
-    // opencode's task tool throws synchronously when task_id lacks the "ses"
-    // prefix, escaping its own catchCause guard and crashing every subagent
-    // launch (https://github.com/anomalyco/opencode/issues/16755).
-    // The hook strips invalid IDs so the tool falls through to a fresh child.
-    it('strips task_id values that lack the ses prefix (fabricated by non-reasoning models)', async () => {
-      const hooks = await OpenGrokBuildPlugin(testPluginInput());
-      const args = await triggerTaskExecuteBefore(
-        hooks,
-        'task',
-        // Mimics grok-composer fabricating a UUID as task_id
+  it('registers the Grok Build integration and its methods', async () => {
+    const { fake } = await setup();
+
+    const integration = applyTransforms(fake).integration;
+
+    expect(integration.names.get('grok-build')).toBe('Grok Build');
+    expect(integration.methods).toHaveLength(4);
+  });
+
+  it('wires the provider-scoped session hooks into account rotation', async () => {
+    const { fake } = await setup([CRED_A, CRED_B]);
+
+    expect([...fake.hooks.keys()]).toEqual(['http.request', 'http.response', 'retry']);
+    expect(fake.hooks.get('retry')?.options).toEqual({ providerID: 'grok-build' });
+    expect((await exhaustSession(fake, SESSION)).decision).toEqual({ retry: true, delay: 0 });
+    expect(loadConfig().config.accounts.selected).toBe('credential:cred_b');
+  });
+
+  it('answers account RPC calls and reports unknown keys', async () => {
+    const { fake } = await setup([CRED_A, CRED_B]);
+    const rpc = handlers(fake);
+
+    expect(fake.rpc.definition?.id).toBe('open-grok-build');
+    expect(await rpc['accounts.list']({} as never, rpcErrorContext() as never)).toEqual({
+      accounts: [
         {
-          description: 'investigate bug',
-          prompt: 'find the leak',
-          subagent_type: 'general',
-          task_id: '4178c106-bf3c-4a14-89e4-07d68188bdd8',
+          key: 'credential:cred_a',
+          label: 'A',
+          selected: true,
+          environment: false,
+          exhausted: false,
         },
-      );
-      expect(args.task_id).toBeUndefined();
-      expect(args.subagent_type).toBe('general');
+        {
+          key: 'credential:cred_b',
+          label: 'B',
+          selected: false,
+          environment: false,
+          exhausted: false,
+        },
+      ],
     });
+    expect(
+      await rpc['accounts.select'](
+        { key: 'credential:cred_b' } as never,
+        rpcErrorContext() as never,
+      ),
+    ).toEqual({ ok: true });
+    expect(loadConfig().config.accounts.selected).toBe('credential:cred_b');
+    expect(
+      await rpc['accounts.select']({ key: 'credential:gone' } as never, rpcErrorContext() as never),
+    ).toMatchObject({ type: 'not_found' });
+    expect(
+      await rpc['usage.report']({ key: 'credential:gone' } as never, rpcErrorContext() as never),
+    ).toMatchObject({ type: 'not_found' });
+  });
 
-    it('preserves real ses_ task_id values for subagent resume', async () => {
-      const hooks = await OpenGrokBuildPlugin(testPluginInput());
-      const args = await triggerTaskExecuteBefore(hooks, 'task', {
-        description: 'continue work',
-        prompt: 'resume',
-        subagent_type: 'general',
-        task_id: 'ses_14209ee2affeovRO3QEIAheNCH',
-      });
-      expect(args.task_id).toBe('ses_14209ee2affeovRO3QEIAheNCH');
-    });
+  it('invalidates the account listing and forgets deleted sessions', async () => {
+    const { fake } = await setup();
+    const rpc = handlers(fake);
+    await rpc['accounts.list']({} as never, rpcErrorContext() as never);
+    await serveRequest(fake, SESSION);
+    await failRequest(fake, SESSION, 502);
+    expect(fake.storage.has(conversationStorageKey(SESSION))).toBe(true);
 
-    it('ignores non-task tools', async () => {
-      const hooks = await OpenGrokBuildPlugin(testPluginInput());
-      const args = await triggerTaskExecuteBefore(hooks, 'read', {
-        path: '/tmp/file.txt',
-        task_id: 'not-a-real-id',
-      });
-      // read tool is untouched; only the task tool is sanitized
-      expect(args.task_id).toBe('not-a-real-id');
+    fake.events.push({
+      type: 'credential.switched',
+      data: { integrationID: 'grok-build', credentialID: null },
     });
+    fake.events.push({ type: 'session.deleted', data: { sessionID: SESSION } });
+    await vi.waitFor(() => expect(fake.storage.has(conversationStorageKey(SESSION))).toBe(false));
 
-    it('no-ops when task_id is absent', async () => {
-      const hooks = await OpenGrokBuildPlugin(testPluginInput());
-      const args = await triggerTaskExecuteBefore(hooks, 'task', {
-        description: 'do work',
-        prompt: 'go',
-        subagent_type: 'general',
-      });
-      expect(args.task_id).toBeUndefined();
-      expect(args.subagent_type).toBe('general');
-    });
+    await rpc['accounts.list']({} as never, rpcErrorContext() as never);
+    expect(fake.calls.integrationGet).toBeGreaterThan(1);
+  });
+
+  it('stops listening for events when the plugin is disposed', async () => {
+    const { fake, cleanup } = await setup();
+
+    await cleanup?.();
+
+    await vi.waitFor(() => expect(fake.events.state.done).toBe(true));
   });
 });

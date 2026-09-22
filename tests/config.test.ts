@@ -4,7 +4,6 @@ import { dirname } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_CONFIG,
-  findAvailableAccountNumber,
   getConfigPath,
   loadConfig,
   saveConfig,
@@ -23,104 +22,66 @@ describe('Open Grok Build configuration', () => {
   it('uses isolated defaults without creating a file', () => {
     useTempHome();
 
-    const first = loadConfig();
-    const account = first.config.accounts.items[0];
-    if (!account) throw new Error('missing default account');
-    account.label = 'changed';
+    loadConfig().config.imagine.enabled = false;
 
     expect(loadConfig()).toEqual({ config: DEFAULT_CONFIG });
+    expect(DEFAULT_CONFIG.imagine.enabled).toBe(true);
     expect(existsSync(getConfigPath())).toBe(false);
   });
 
   it('atomically stores normalized private configuration', () => {
     useTempHome();
-    saveConfig({
-      ...DEFAULT_CONFIG,
-      accounts: {
-        ...DEFAULT_CONFIG.accounts,
-        items: [{ provider: 'grok-build', label: 'Personal' }],
-      },
-    });
+    saveConfig({ ...DEFAULT_CONFIG, accounts: { selected: 'credential:cred_1' } });
 
-    expect(loadConfig().config).toMatchObject({
-      version: 1,
-      accounts: { items: [{ provider: 'grok-build', label: 'Personal' }] },
+    expect(loadConfig().config).toEqual({
+      version: 2,
+      accounts: { selected: 'credential:cred_1' },
+      imagine: { enabled: true },
     });
     expect(statSync(getConfigPath()).mode & 0o777).toBe(0o600);
   });
 
-  it('normalizes account aliases, labels, selection, and the next reusable number', () => {
+  it('ignores invalid selected keys and imagine values with a warning', () => {
+    useTempHome();
+    writeConfig({ version: 2, accounts: { selected: 'bad\nkey' }, imagine: { enabled: 'yes' } });
+
+    const loaded = loadConfig();
+
+    expect(loaded.config.accounts).toEqual({});
+    expect(loaded.config.imagine).toEqual({ enabled: true });
+    expect(loaded.warning).toContain('accounts.selected');
+    expect(loaded.warning).toContain('imagine.enabled must be true or false');
+  });
+
+  it.each([true, false])('persists the imagine toggle set to %s', (enabled) => {
+    useTempHome();
+    saveConfig({ ...DEFAULT_CONFIG, imagine: { enabled } });
+
+    expect(loadConfig().config.imagine).toEqual({ enabled });
+  });
+
+  it('resets a version 1 config file to defaults with a warning', () => {
     useTempHome();
     writeConfig({
-      ...DEFAULT_CONFIG,
-      accounts: {
-        selectedProvider: 'missing',
-        items: [
-          { provider: 'grok-build', label: ' Personal ' },
-          { provider: 'grok-build-2', label: 'Work' },
-          { provider: 'grok-build-2', label: 'Duplicate provider' },
-          { provider: 'grok-build-3', label: 'work' },
-          { provider: 'grok-build-10', label: 'Account 10' },
-          { provider: 'xai', label: 'Other' },
-          { provider: 'grok-build-4', label: 'bad\nlabel' },
-        ],
-      },
+      version: 1,
+      accounts: { items: [{ provider: 'grok-build', label: 'Personal' }] },
     });
 
     const loaded = loadConfig();
 
-    expect(loaded.config.accounts).toEqual({
-      nextAccountNumber: 3,
-      selectedProvider: 'grok-build',
-      items: [
-        { provider: 'grok-build', label: 'Personal' },
-        { provider: 'grok-build-2', label: 'Work' },
-        { provider: 'grok-build-10', label: 'Account 10' },
-      ],
-    });
-    expect(loaded.warning).toContain('accounts');
+    expect(loaded.warning).toContain('v1');
+    expect(loaded.config).toEqual(DEFAULT_CONFIG);
+    expect(JSON.parse(readFileSync(getConfigPath(), 'utf8'))).toEqual(DEFAULT_CONFIG);
+    expect(loadConfig().warning).toBeUndefined();
   });
 
-  it('reserves the base account label when base metadata is absent', () => {
+  it('does not overwrite unsupported future configuration', () => {
     useTempHome();
-    writeConfig({
-      ...DEFAULT_CONFIG,
-      accounts: {
-        selectedProvider: 'grok-build-2',
-        items: [
-          { provider: 'grok-build-2', label: 'Account 1' },
-          { provider: 'grok-build-3', label: 'Work' },
-        ],
-      },
-    });
+    writeConfig({ version: 3 });
 
-    expect(loadConfig().config.accounts).toEqual({
-      nextAccountNumber: 2,
-      selectedProvider: 'grok-build',
-      items: [
-        { provider: 'grok-build', label: 'Account 1' },
-        { provider: 'grok-build-3', label: 'Work' },
-      ],
-    });
-  });
-
-  it('does not overwrite malformed or unsupported configuration', () => {
-    useTempHome();
-    writeConfig({ version: 2 });
-
-    expect(loadConfig().warning).toContain('Unsupported config version 2');
-    expect(JSON.parse(readFileSync(getConfigPath(), 'utf8'))).toEqual({ version: 2 });
-  });
-
-  it('rejects updates to unsupported configuration without overwriting it', () => {
-    useTempHome();
-    writeConfig({ version: 2, accounts: { items: [{ provider: 'future', label: 'Future' }] } });
-
-    expect(() => updateConfig((config) => config)).toThrow('Unsupported config version 2');
-    expect(JSON.parse(readFileSync(getConfigPath(), 'utf8'))).toEqual({
-      version: 2,
-      accounts: { items: [{ provider: 'future', label: 'Future' }] },
-    });
+    expect(loadConfig().warning).toContain('Unsupported config version 3');
+    expect(() => updateConfig((config) => config)).toThrow('Unsupported config version 3');
+    expect(JSON.parse(readFileSync(getConfigPath(), 'utf8'))).toEqual({ version: 3 });
   });
 
   it('retries when a released config lock disappears before inspection', async () => {
@@ -138,19 +99,9 @@ describe('Open Grok Build configuration', () => {
     );
 
     expect(() =>
-      updateConfig((config) => ({
-        ...config,
-        accounts: { ...config.accounts, selectedProvider: 'grok-build' },
-      })),
+      updateConfig((config) => ({ ...config, accounts: { selected: 'credential:x' } })),
     ).not.toThrow();
     await new Promise<void>((resolve) => release.once('close', () => resolve()));
-  });
-
-  it('reuses the lowest free numbered alias', () => {
-    expect(findAvailableAccountNumber(['grok-build', 'grok-build-3'])).toBe(2);
-    expect(
-      findAvailableAccountNumber(['grok-build', 'grok-build-2'], ['grok-build-3', 'grok-build-4']),
-    ).toBe(5);
   });
 
   it('serializes configuration updates from separate processes', async () => {
@@ -169,7 +120,7 @@ describe('Open Grok Build configuration', () => {
         while (!existsSync(${JSON.stringify(release)})) {
           Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
         }
-        config.accounts.items[0].label = 'Updated primary';
+        config.imagine.enabled = false;
         return config;
       });
     `,
@@ -182,7 +133,7 @@ describe('Open Grok Build configuration', () => {
       import { updateConfig } from './src/config.ts';
       writeFileSync(${JSON.stringify(secondReady)}, '');
       updateConfig((config) => {
-        config.accounts.items.push({ provider: 'grok-build-2', label: 'Work' });
+        config.accounts.selected = 'credential:second';
         return config;
       });
     `,
@@ -193,9 +144,10 @@ describe('Open Grok Build configuration', () => {
 
     await Promise.all([first, second]);
 
-    expect(loadConfig().config.accounts.items).toEqual([
-      { provider: 'grok-build', label: 'Updated primary' },
-      { provider: 'grok-build-2', label: 'Work' },
-    ]);
+    expect(loadConfig().config).toEqual({
+      version: 2,
+      accounts: { selected: 'credential:second' },
+      imagine: { enabled: false },
+    });
   });
 });

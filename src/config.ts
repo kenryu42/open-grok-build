@@ -3,23 +3,20 @@ import { getConfigPath, withFileLock, writeFileAtomic } from './storage.js';
 
 export { getConfigPath } from './storage.js';
 
-export const CONFIG_VERSION = 1 as const;
-export const GROK_BUILD_ACCOUNT_ID = 'grok-build';
-
-export interface GrokBuildAccount {
-  provider: string;
-  label: string;
-}
+export const CONFIG_VERSION = 2 as const;
 
 export interface AccountsConfig {
-  nextAccountNumber: number;
-  selectedProvider: string;
-  items: GrokBuildAccount[];
+  selected?: string;
+}
+
+export interface ImagineConfig {
+  enabled: boolean;
 }
 
 export interface OpenGrokBuildConfig {
   version: typeof CONFIG_VERSION;
   accounts: AccountsConfig;
+  imagine: ImagineConfig;
 }
 
 export interface LoadedConfig {
@@ -27,25 +24,14 @@ export interface LoadedConfig {
   warning?: string;
 }
 
-export const DEFAULT_ACCOUNTS_CONFIG: AccountsConfig = {
-  nextAccountNumber: 2,
-  selectedProvider: GROK_BUILD_ACCOUNT_ID,
-  items: [{ provider: GROK_BUILD_ACCOUNT_ID, label: 'Account 1' }],
-};
-
 export const DEFAULT_CONFIG: OpenGrokBuildConfig = {
   version: CONFIG_VERSION,
-  accounts: DEFAULT_ACCOUNTS_CONFIG,
+  accounts: {},
+  imagine: { enabled: true },
 };
 
 function defaultConfig(): OpenGrokBuildConfig {
-  return {
-    version: CONFIG_VERSION,
-    accounts: {
-      ...DEFAULT_ACCOUNTS_CONFIG,
-      items: DEFAULT_ACCOUNTS_CONFIG.items.map((account) => ({ ...account })),
-    },
-  };
+  return { version: CONFIG_VERSION, accounts: {}, imagine: { enabled: true } };
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -59,96 +45,32 @@ export function hasTerminalControlCharacters(value: string) {
   });
 }
 
-export function accountNumber(provider: string) {
-  if (provider === GROK_BUILD_ACCOUNT_ID) return 1;
-  const match = /^grok-build-((?:[2-9]|[1-9]\d+))$/.exec(provider);
-  return match ? Number(match[1]) : undefined;
-}
-
-export function isGrokBuildAccount(provider: string | undefined): boolean {
-  return typeof provider === 'string' && accountNumber(provider) !== undefined;
-}
-
-export function findAvailableAccountNumber(
-  providers: Iterable<string>,
-  reservedProviders: Iterable<string> = [],
-) {
-  const unavailable = new Set([...providers, ...reservedProviders]);
-  const find = (number: number): number =>
-    unavailable.has(`${GROK_BUILD_ACCOUNT_ID}-${number}`) ? find(number + 1) : number;
-  return find(2);
-}
-
-export function selectAccount(config: OpenGrokBuildConfig, provider: string) {
-  if (!config.accounts.items.some((account) => account.provider === provider)) {
-    throw new Error(`Unknown Grok Build account: ${provider}`);
-  }
-  return {
-    ...config,
-    accounts: {
-      ...config.accounts,
-      selectedProvider: provider,
-      items: config.accounts.items.map((account) => ({ ...account })),
-    },
-  };
-}
-
 function normalizeAccountsConfig(raw: unknown, warnings: string[]): AccountsConfig {
-  if (raw === undefined) return defaultConfig().accounts;
-  if (!isObject(raw) || !Array.isArray(raw.items)) {
-    warnings.push('accounts must be an object with an items array. Using defaults.');
-    return defaultConfig().accounts;
+  if (raw === undefined) return {};
+  if (!isObject(raw)) {
+    warnings.push('accounts must be a JSON object. Using defaults.');
+    return {};
   }
+  if (raw.selected === undefined) return {};
+  const selected = typeof raw.selected === 'string' ? raw.selected.trim() : '';
+  if (!selected || hasTerminalControlCharacters(selected)) {
+    warnings.push('accounts.selected must be a non-empty string. Ignoring it.');
+    return {};
+  }
+  return { selected };
+}
 
-  const invalid: unknown[] = [];
-  const providers = new Set<string>();
-  const labels = new Set<string>();
-  const baseIndex = raw.items.findIndex(
-    (value) =>
-      isObject(value) &&
-      value.provider === GROK_BUILD_ACCOUNT_ID &&
-      typeof value.label === 'string' &&
-      Boolean(value.label.trim()) &&
-      [...value.label.trim()].length <= 40 &&
-      !hasTerminalControlCharacters(value.label.trim()),
-  );
-  const values =
-    baseIndex >= 0
-      ? [raw.items[baseIndex], ...raw.items.filter((_value, index) => index !== baseIndex)]
-      : [{ provider: GROK_BUILD_ACCOUNT_ID, label: 'Account 1' }, ...raw.items];
-  const items = values.flatMap((value) => {
-    if (!isObject(value) || typeof value.provider !== 'string' || typeof value.label !== 'string') {
-      invalid.push(value);
-      return [];
-    }
-    const label = value.label.trim();
-    const normalizedLabel = label.toLocaleLowerCase();
-    if (
-      accountNumber(value.provider) === undefined ||
-      !label ||
-      [...label].length > 40 ||
-      hasTerminalControlCharacters(label) ||
-      providers.has(value.provider) ||
-      labels.has(normalizedLabel)
-    ) {
-      invalid.push(value);
-      return [];
-    }
-    providers.add(value.provider);
-    labels.add(normalizedLabel);
-    return [{ provider: value.provider, label }];
-  });
-
-  if (invalid.length)
-    warnings.push('accounts contains invalid or duplicate entries. Ignoring them.');
-  return {
-    nextAccountNumber: findAvailableAccountNumber(providers),
-    selectedProvider:
-      typeof raw.selectedProvider === 'string' && providers.has(raw.selectedProvider)
-        ? raw.selectedProvider
-        : GROK_BUILD_ACCOUNT_ID,
-    items,
-  };
+function normalizeImagineConfig(raw: unknown, warnings: string[]): ImagineConfig {
+  if (raw === undefined) return { enabled: true };
+  if (!isObject(raw)) {
+    warnings.push('imagine must be a JSON object. Using defaults.');
+    return { enabled: true };
+  }
+  if (typeof raw.enabled === 'boolean') return { enabled: raw.enabled };
+  if (raw.enabled !== undefined) {
+    warnings.push('imagine.enabled must be true or false. Using enabled=true.');
+  }
+  return { enabled: true };
 }
 
 export function normalizeConfig(raw: unknown, warnings: string[] = []): OpenGrokBuildConfig {
@@ -157,6 +79,7 @@ export function normalizeConfig(raw: unknown, warnings: string[] = []): OpenGrok
   return {
     version: CONFIG_VERSION,
     accounts: normalizeAccountsConfig(value.accounts, warnings),
+    imagine: normalizeImagineConfig(value.imagine, warnings),
   };
 }
 
@@ -167,6 +90,13 @@ export function loadConfig(path = getConfigPath()): LoadedConfig {
       return {
         config: defaultConfig(),
         warning: `Config ${path} must be a JSON object. Using defaults.`,
+      };
+    }
+    if (raw.version === 1) {
+      saveConfig(defaultConfig(), path);
+      return {
+        config: defaultConfig(),
+        warning: `Config ${path} was written by open-grok-build v1 and was reset to defaults. Reconnect extra accounts with /connect.`,
       };
     }
     if (raw.version !== CONFIG_VERSION) {

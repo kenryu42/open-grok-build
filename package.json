@@ -1,7 +1,7 @@
 {
   "name": "open-grok-build",
   "version": "0.3.0",
-  "description": "Full-featured Grok Build integration for OpenCode with OAuth, account rotation, and quota tracking.",
+  "description": "Grok Build provider, OAuth, multi-account rotation, quota tracking and Imagine image generation for OpenCode v2.",
   "keywords": [
     "opencode",
     "opencode-plugin",
@@ -15,7 +15,8 @@
   "main": "./src/opencode/plugin.ts",
   "exports": {
     ".": "./src/opencode/plugin.ts",
-    "./tui": "./src/opencode/tui.tsx"
+    "./tui": "./src/opencode/tui.ts",
+    "./rpc": "./src/opencode/rpc.ts"
   },
   "files": [
     "README.md",
@@ -48,19 +49,8 @@
     "url": "https://github.com/kenryu42/open-grok-build/issues"
   },
   "homepage": "https://github.com/kenryu42/open-grok-build#readme",
-  "peerDependencies": {
-    "@opencode-ai/plugin": ">=1.15.0",
-    "@opentui/solid": ">=0.2.16"
-  },
-  "peerDependenciesMeta": {
-    "@opentui/solid": {
-      "optional": true
-    }
-  },
   "devDependencies": {
     "@biomejs/biome": "2.4.16",
-    "@opencode-ai/plugin": "1.15.13",
-    "@opencode-ai/sdk": "1.15.13",
     "@types/node": "^22.0.0",
     "@vitest/coverage-v8": "^4.1.8",
     "husky": "^9.1.7",
@@ -68,6 +58,7 @@
     "knip": "^6.15.0",
     "lint-staged": "^17.0.7",
     "release-tools": "github:kenryu42/release-tools",
+    "solid-js": "1.9.15",
     "typescript": "^6.0.3",
     "vitest": "^4.1.8"
   },
@@ -75,5 +66,9 @@
     "*": [
       "biome check --write --no-errors-on-unmatched"
     ]
+  },
+  "dependencies": {
+    "@opencode/plugin": "^2.0.12",
+    "zod": "^4.1.8"
   }
 }

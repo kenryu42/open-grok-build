@@ -505,6 +505,10 @@ const statusPill = (account) => {
   return pill;
 };
 
+const accountPath = (provider) => encodeURIComponent(provider);
+
+const accountTransitionName = (provider) => `card-${provider.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+
 const actionButton = (label, action, kind = 'ghost') => {
   const button = element('button', `button small ${kind}`, label);
   button.type = 'button';
@@ -517,7 +521,7 @@ const startLogin = async (provider) => {
   // Open the popup with the final URL instead of scripting a blank one: embedded
   // browsers (e.g. WKWebView) hand window.open('') an unusable about:blank view.
   try {
-    const ticket = await mutation(`/api/accounts/${provider}/login-ticket`, 'POST');
+    const ticket = await mutation(`/api/accounts/${accountPath(provider)}/login-ticket`, 'POST');
     if (!window.open(ticket.path, `grok-login-${provider}`)) {
       showToast('Pop-up blocked. Allow pop-ups, then use Log in on the account card.', true);
       return;
@@ -529,43 +533,20 @@ const startLogin = async (provider) => {
 };
 
 const loginPanel = (account, isNew) => {
-  const panel = element('form', 'login-panel');
+  const panel = element('div', 'login-panel');
   panel.append(element('p', '', account.login.progress || 'Waiting for browser authorization…'));
-  const row = element('div', 'login-row');
-  const input = element('input');
-  input.name = 'code';
-  input.autocomplete = 'off';
-  input.placeholder = 'One-time code (if shown)';
-  input.setAttribute('aria-label', 'One-time authorization code');
-  input.dataset.action = 'code';
-  const submit = element('button', 'button small primary', 'Submit code');
-  submit.type = 'submit';
-  row.append(input, submit);
   const cancel = element('button', 'link-button', 'Cancel login');
   cancel.type = 'button';
   cancel.dataset.action = 'Cancel login';
   cancel.addEventListener('click', async () => {
     try {
-      await mutation(`/api/accounts/${account.provider}/login-cancel`, 'POST');
+      await mutation(`/api/accounts/${accountPath(account.provider)}/login-cancel`, 'POST');
       await refreshState(true, true);
     } catch (error) {
       showToast(error.message, true);
     }
   });
-  panel.append(row, cancel);
-  panel.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    if (!input.value.trim()) return;
-    try {
-      await mutation(`/api/accounts/${account.provider}/login-code`, 'POST', {
-        code: input.value,
-      });
-      input.value = '';
-      showToast('Code submitted — finishing login…');
-    } catch (error) {
-      showToast(error.message, true);
-    }
-  });
+  panel.append(cancel);
   if (isNew) {
     panel.animate(
       [
@@ -582,7 +563,7 @@ const cardActions = (account) => {
   const actions = element('footer', 'card-actions');
   const activate = async () => {
     try {
-      await mutation(`/api/accounts/${account.provider}/activate`, 'POST');
+      await mutation(`/api/accounts/${accountPath(account.provider)}/activate`, 'POST');
       await refreshState(true, true);
       showToast(`Switched to ${account.label}.`);
     } catch (error) {
@@ -598,7 +579,9 @@ const cardActions = (account) => {
     });
     if (label === undefined) return;
     try {
-      const updated = await mutation(`/api/accounts/${account.provider}`, 'PATCH', { label });
+      const updated = await mutation(`/api/accounts/${accountPath(account.provider)}`, 'PATCH', {
+        label,
+      });
       await refreshState(true);
       showToast(`Renamed to ${updated.label}.`);
     } catch (error) {
@@ -609,38 +592,23 @@ const cardActions = (account) => {
     await modal({
       title: 'Remove environment login',
       message:
-        'This account logs in through GROK_BUILD_OAUTH_TOKEN or OpenCode auth. Remove that credential and restart OpenCode to remove the account.',
+        'This account comes from GROK_BUILD_OAUTH_TOKEN. Unset the variable and restart OpenCode to remove it.',
       confirm: 'Close',
       cancel: false,
     });
   };
   const destructive = async () => {
     const confirmed = await modal({
-      title:
-        account.provider === 'grok-build'
-          ? `Log out ${account.label}?`
-          : `Remove ${account.label}?`,
-      message:
-        account.provider === 'grok-build'
-          ? 'Removes the saved login. The account stays in the list — log in again to use it.'
-          : 'Removes this account and its saved login. You can add it again with Add account.',
-      confirm: account.provider === 'grok-build' ? 'Log out' : 'Remove account',
+      title: `Remove ${account.label}?`,
+      message: 'Removes this saved login from OpenCode. Connect again to add it back.',
+      confirm: 'Remove account',
       danger: true,
     });
     if (!confirmed) return;
     try {
-      await mutation(
-        account.provider === 'grok-build'
-          ? '/api/accounts/grok-build/logout'
-          : `/api/accounts/${account.provider}`,
-        account.provider === 'grok-build' ? 'POST' : 'DELETE',
-      );
+      await mutation(`/api/accounts/${accountPath(account.provider)}`, 'DELETE');
       await refreshState(true, true);
-      showToast(
-        account.provider === 'grok-build'
-          ? `Logged out ${account.label}.`
-          : `Removed ${account.label}.`,
-      );
+      showToast(`Removed ${account.label}.`);
     } catch (error) {
       showToast(error.message, true);
     }
@@ -659,12 +627,7 @@ const cardActions = (account) => {
   }
   actions.append(actionButton('Rename', rename));
   if (!account.environment) {
-    const button = actionButton(
-      account.provider === 'grok-build' ? 'Log out' : 'Remove',
-      destructive,
-      'danger push-right',
-    );
-    actions.append(button);
+    actions.append(actionButton('Remove', destructive, 'danger push-right'));
   }
   return actions;
 };
@@ -672,7 +635,7 @@ const cardActions = (account) => {
 const accountCard = (account, index, isNewPending, refreshing) => {
   const card = element('article', `account-card${account.active ? ' active' : ''}`);
   card.dataset.provider = account.provider;
-  card.style.viewTransitionName = `card-${account.provider}`;
+  card.style.viewTransitionName = accountTransitionName(account.provider);
   if (!entranceDone) {
     card.style.setProperty('--enter-delay', `${Math.min(index * 45, 220)}ms`);
   }
@@ -877,7 +840,7 @@ addAccount.addEventListener('click', async () => {
   const label = await modal({
     title: 'Add account',
     message:
-      'Optional label, shown in OpenCode and this dashboard. A browser window opens next for xAI authorization.',
+      'Optional label. A browser window opens next for xAI authorization; the account appears after login completes.',
     value: '',
     confirm: 'Add',
   });

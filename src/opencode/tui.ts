@@ -1,0 +1,103 @@
+import { spawn } from 'node:child_process';
+import { Plugin } from '@opencode/plugin/tui';
+import { type DashboardHost, OpenCodeAccountDashboardManager } from './accountDashboardManager.js';
+import { type AccountDashboardHandle, startAccountDashboard } from './dashboard/server.js';
+import { OpenGrokBuildRpc } from './rpc.js';
+import { GROK_BUILD_USAGE_DESCRIPTION } from './usage.js';
+import {
+  formatUsageToastMessage,
+  GROK_BUILD_USAGE_SLASH,
+  GROK_BUILD_USAGE_TUI_COMMAND,
+} from './usageToast.js';
+
+function openBrowser(url: string, onError: () => void, onOpened: () => void) {
+  const command =
+    process.platform === 'darwin'
+      ? { file: 'open', args: [url] }
+      : process.platform === 'win32'
+        ? { file: 'cmd', args: ['/c', 'start', '', url] }
+        : { file: 'xdg-open', args: [url] };
+  const child = spawn(command.file, command.args, { detached: true, stdio: 'ignore' });
+  const settled = { done: false };
+  const finish = (callback: () => void) => {
+    if (settled.done) return;
+    settled.done = true;
+    callback();
+  };
+  child.once('error', () => finish(onError));
+  child.once('exit', (code) => finish(code === 0 ? onOpened : onError));
+  child.unref();
+}
+
+function dashboardHost(context: Plugin.Context): DashboardHost {
+  const rpc = context.client.rpc(OpenGrokBuildRpc);
+  return {
+    accountsList: () => rpc['accounts.list']({}),
+    accountsSelect: (key) => rpc['accounts.select']({ key }),
+    quotasRefresh: (keys, signal) => rpc['quotas.refresh']({ keys }, { signal }),
+    credential: context.client.credential,
+    oauth: context.client.integration.oauth,
+  };
+}
+
+const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+async function setup(context: Plugin.Context) {
+  const rpc = context.client.rpc(OpenGrokBuildRpc);
+  const manager = new OpenCodeAccountDashboardManager(dashboardHost(context));
+  const state: { dashboard?: AccountDashboardHandle } = {};
+  const toast = (message: string, variant: 'info' | 'error' = 'info') =>
+    context.ui.toast.show({ title: 'Grok Build', message, variant, duration: 8_000 });
+
+  const showUsage = () =>
+    rpc['usage.report']({}).then(
+      (report) => toast(formatUsageToastMessage(report.lines)),
+      (error: unknown) => toast(errorMessage(error), 'error'),
+    );
+
+  const openDashboard = async () => {
+    const wasOpen = state.dashboard?.isOpen() === true;
+    if (!wasOpen) state.dashboard = await startAccountDashboard(manager);
+    const dashboard = state.dashboard;
+    if (!dashboard) return;
+    openBrowser(
+      wasOpen ? dashboard.origin : dashboard.bootstrapUrl,
+      () => {
+        if (state.dashboard === dashboard) state.dashboard = undefined;
+        void dashboard.close().catch(() => undefined);
+        toast('Could not open the account dashboard in your browser.', 'error');
+      },
+      () => toast(`Account dashboard opened at ${dashboard.origin}`),
+    );
+  };
+
+  context.keymap.layer(() => ({
+    mode: 'global',
+    commands: [
+      {
+        id: GROK_BUILD_USAGE_TUI_COMMAND,
+        title: 'Grok Build usage',
+        description: GROK_BUILD_USAGE_DESCRIPTION,
+        group: 'Grok Build',
+        palette: true,
+        slash: { name: GROK_BUILD_USAGE_SLASH },
+        run: showUsage,
+      },
+      {
+        id: 'open-grok-build.accounts',
+        title: 'Grok Build accounts',
+        description: 'Open the private account and quota dashboard',
+        group: 'Grok Build',
+        palette: true,
+        slash: { name: 'grok-build-accounts' },
+        run: openDashboard,
+      },
+    ],
+  }));
+
+  return async () => {
+    await state.dashboard?.close();
+  };
+}
+
+export default Plugin.define({ id: 'open-grok-build.tui', setup });

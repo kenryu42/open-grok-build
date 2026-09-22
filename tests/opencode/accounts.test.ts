@@ -1,167 +1,179 @@
 import { describe, expect, it, vi } from 'vitest';
-import { DEFAULT_CONFIG, type OpenGrokBuildConfig } from '../../src/config.js';
+import { DEFAULT_CONFIG, loadConfig, saveConfig } from '../../src/config.js';
 import {
-  addAccount,
-  buildAccountsSnapshot,
-  GrokBuildAccountManager,
+  connectionKey,
+  credentialID,
+  ENVIRONMENT_ACCOUNT_LABEL,
+  GrokBuildAccounts,
+  type HostAccount,
   refreshAccountQuotas,
-  removeAccount,
-  renameAccount,
-  selectAccount,
 } from '../../src/opencode/accounts.js';
+import { useTempOpenCodeHome } from '../stateTestHelpers.js';
+import { fakeContext } from './fakeContext.js';
 
-function config(): OpenGrokBuildConfig {
-  return {
-    ...DEFAULT_CONFIG,
-    accounts: {
-      nextAccountNumber: 2,
-      selectedProvider: 'grok-build',
-      items: [{ provider: 'grok-build', label: 'Personal' }],
+const useTempHome = useTempOpenCodeHome('open-grok-build-accounts-');
+const CRED_1 = 'credential:cred_1';
+const CRED_2 = 'credential:cred_2';
+const ENV_KEY = 'env:GROK_BUILD_OAUTH_TOKEN';
+
+function host() {
+  return fakeContext({
+    connections: [
+      { type: 'credential', id: 'cred_1', label: 'Work' },
+      { type: 'credential', id: 'cred_2', label: 'Personal' },
+      { type: 'env', name: 'GROK_BUILD_OAUTH_TOKEN' },
+    ],
+    credentials: {
+      cred_1: { type: 'oauth', access: 'tok-1', refresh: 'r1', expires: 1, methodID: 'browser' },
+      cred_2: { type: 'key', key: 'tok-2' },
     },
+    environmentToken: 'env-token',
+  });
+}
+
+function accountsFor(fake = host()) {
+  return { fake, accounts: new GrokBuildAccounts(fake.ctx.integration) };
+}
+
+function fakeAccount(key: string): HostAccount {
+  return {
+    key,
+    label: key,
+    environment: false,
+    connection: { type: 'credential', id: key, label: key },
   };
 }
 
-describe('Grok Build accounts', () => {
-  it('adds accounts using default labels and the lowest free credential alias', () => {
-    const first = addAccount(config(), ' Work ');
-    const withGap = removeAccount(first.config, 'grok-build-2');
-    const replacement = addAccount(
+describe('Grok Build host accounts', () => {
+  it('derives stable keys from host connections', () => {
+    expect(connectionKey({ type: 'credential', id: 'cred_1', label: 'Work' })).toBe(CRED_1);
+    expect(connectionKey({ type: 'env', name: 'GROK_BUILD_OAUTH_TOKEN' })).toBe(ENV_KEY);
+    expect(credentialID(CRED_1)).toBe('cred_1');
+    expect(credentialID(ENV_KEY)).toBeUndefined();
+  });
+
+  it('caches the connection listing until it is invalidated', async () => {
+    const { fake, accounts } = accountsFor();
+
+    expect(await accounts.list()).toEqual([
       {
-        ...withGap,
-        accounts: {
-          ...withGap.accounts,
-          items: [...withGap.accounts.items, { provider: 'grok-build-3', label: 'Client' }],
-        },
+        key: CRED_1,
+        label: 'Work',
+        environment: false,
+        connection: { type: 'credential', id: 'cred_1', label: 'Work' },
       },
-      '',
-    );
-
-    expect(first.account).toEqual({ provider: 'grok-build-2', label: 'Work' });
-    expect(replacement.account).toEqual({ provider: 'grok-build-2', label: 'Account 2' });
-  });
-
-  it('chooses a unique default label when the account-number label already exists', () => {
-    const current = config();
-    current.accounts.items[0] = { provider: 'grok-build', label: 'Account 2' };
-
-    expect(addAccount(current).account).toEqual({
-      provider: 'grok-build-2',
-      label: 'Account 3',
-    });
-  });
-
-  it('validates unique safe labels', () => {
-    const current = addAccount(config(), 'Work').config;
-
-    expect(() => addAccount(current, 'work')).toThrow('already exists');
-    expect(() => renameAccount(current, 'grok-build-2', 'bad\nlabel')).toThrow(
-      'control characters',
-    );
-    expect(() => renameAccount(current, 'grok-build-2', 'x'.repeat(41))).toThrow('40 characters');
-  });
-
-  it('selects known aliases and returns to the permanent base after removing the selection', () => {
-    const current = addAccount(config(), 'Work').config;
-    const selected = selectAccount(current, 'grok-build-2');
-
-    expect(removeAccount(selected, 'grok-build-2').accounts.selectedProvider).toBe('grok-build');
-    expect(() => selectAccount(current, 'missing')).toThrow('Unknown Grok Build account');
-    expect(() => removeAccount(current, 'grok-build')).toThrow('cannot be removed');
-  });
-
-  it('builds credential-free account snapshots with cached quota', () => {
-    const current = selectAccount(addAccount(config(), 'Work').config, 'grok-build-2');
-    const snapshot = buildAccountsSnapshot(
-      current,
-      ['grok-build-2'],
       {
-        version: 1,
-        accounts: {
-          'grok-build-2': {
-            updatedAt: '2026-07-25T00:00:00.000Z',
-            credits: {
-              creditUsagePercent: 35,
-              billingPeriodEnd: '2026-08-01T00:00:00.000Z',
-              periodType: 'USAGE_PERIOD_TYPE_WEEKLY',
-            },
-          },
-        },
+        key: CRED_2,
+        label: 'Personal',
+        environment: false,
+        connection: { type: 'credential', id: 'cred_2', label: 'Personal' },
       },
-      'grok-build',
-    );
-
-    expect(snapshot.accounts).toEqual([
-      expect.objectContaining({
-        provider: 'grok-build',
-        status: 'authenticated',
+      {
+        key: ENV_KEY,
+        label: ENVIRONMENT_ACCOUNT_LABEL,
         environment: true,
-      }),
-      expect.objectContaining({
-        provider: 'grok-build-2',
-        status: 'active',
-        authenticated: true,
-        quota: expect.objectContaining({ updatedAt: '2026-07-25T00:00:00.000Z' }),
-      }),
-    ]);
-    expect(JSON.stringify(snapshot)).not.toContain('token');
-  });
-
-  it('tracks account generations so stale quota refreshes can be rejected', () => {
-    let current = config();
-    const save = vi.fn((next: OpenGrokBuildConfig) => {
-      current = next;
-    });
-    const manager = new GrokBuildAccountManager(() => current, save);
-    const account = manager.add('Work');
-    const generation = manager.generation(account.provider);
-
-    expect(manager.isCurrent(account.provider, generation)).toBe(true);
-
-    manager.remove(account.provider);
-
-    expect(manager.isCurrent(account.provider, generation)).toBe(false);
-    expect(save).toHaveBeenCalledTimes(2);
-  });
-
-  it('refreshes quota in bounded batches and rejects stale account results', async () => {
-    let current = config();
-    const manager = new GrokBuildAccountManager(
-      () => current,
-      (next) => {
-        current = next;
+        connection: { type: 'env', name: 'GROK_BUILD_OAUTH_TOKEN' },
       },
+    ]);
+    await accounts.list();
+    expect(fake.calls.integrationGet).toBe(1);
+
+    accounts.invalidate();
+    await accounts.list();
+    expect(fake.calls.integrationGet).toBe(2);
+  });
+
+  it('resolves OAuth, key and missing credentials', async () => {
+    const { accounts } = accountsFor();
+    const listed = await accounts.list();
+
+    expect(await Promise.all(listed.map((account) => accounts.token(account)))).toEqual([
+      'tok-1',
+      'tok-2',
+      'env-token',
+    ]);
+    expect(await accounts.token(fakeAccount('credential:missing'))).toBeUndefined();
+  });
+
+  it('selects the configured account and falls back to the first one', async () => {
+    useTempHome();
+    const { accounts } = accountsFor();
+
+    expect((await accounts.selected())?.key).toBe(CRED_1);
+
+    saveConfig({ ...DEFAULT_CONFIG, accounts: { selected: CRED_2 } });
+    expect((await accounts.selected())?.key).toBe(CRED_2);
+
+    saveConfig({ ...DEFAULT_CONFIG, accounts: { selected: 'credential:gone' } });
+    expect((await accounts.selected())?.key).toBe(CRED_1);
+  });
+
+  it('pins a session to an account until the session is forgotten', async () => {
+    useTempHome();
+    const { accounts } = accountsFor();
+
+    await accounts.select(ENV_KEY, 'ses_1');
+
+    expect(loadConfig().config.accounts.selected).toBe(ENV_KEY);
+    saveConfig({ ...DEFAULT_CONFIG, accounts: { selected: CRED_2 } });
+    expect((await accounts.selected('ses_1'))?.key).toBe(ENV_KEY);
+    expect((await accounts.selected('ses_2'))?.key).toBe(CRED_2);
+
+    accounts.forgetSession('ses_1');
+    expect((await accounts.selected('ses_1'))?.key).toBe(CRED_2);
+    await expect(accounts.select('credential:gone')).rejects.toThrow(
+      'Unknown Grok Build account: credential:gone',
     );
-    manager.add('Work');
-    manager.add('Client');
-    manager.add('Reserve');
-    const active = new Set<string>();
-    let peak = 0;
+  });
+
+  it('reports no account when the host has no connection', async () => {
+    useTempHome();
+    const { accounts } = accountsFor(fakeContext());
+
+    expect(await accounts.selected()).toBeUndefined();
+  });
+
+  it('refreshes quotas in bounded batches and reports failures', async () => {
+    const concurrency = { active: 0, peak: 0 };
     const saved: string[] = [];
     const result = await refreshAccountQuotas({
-      accounts: current.accounts.items,
-      resolveToken: async (provider) => `${provider}-token`,
-      signal: new AbortController().signal,
-      manager,
+      accounts: ['a', 'b', 'c', 'd', 'e'].map(fakeAccount),
+      resolveToken: (account) =>
+        Promise.resolve(account.key === 'd' ? undefined : `token-${account.key}`),
+      signal: AbortSignal.timeout(10_000),
       fetchUsage: async (token) => {
-        active.add(token);
-        peak = Math.max(peak, active.size);
+        concurrency.active += 1;
+        concurrency.peak = Math.max(concurrency.peak, concurrency.active);
         await Promise.resolve();
-        active.delete(token);
-        if (token === 'grok-build-2-token') manager.bump('grok-build-2');
+        concurrency.active -= 1;
+        if (token === 'token-e') throw new Error('offline');
         return {
-          credits: {
-            creditUsagePercent: 10,
-            billingPeriodEnd: '2026-08-01T00:00:00.000Z',
-          },
+          credits: { creditUsagePercent: 10, billingPeriodEnd: '2026-08-01T00:00:00.000Z' },
         };
       },
-      saveUsage: async (provider) => {
-        saved.push(provider);
+      saveUsage: (key) => {
+        saved.push(key);
+        return Promise.resolve();
       },
     });
 
-    expect(peak).toBe(3);
-    expect(result).toEqual({ updated: 3, failed: ['grok-build-2'] });
-    expect(saved).toEqual(['grok-build', 'grok-build-3', 'grok-build-4']);
+    expect(result).toEqual({ updated: 3, failed: ['d', 'e'] });
+    expect(saved).toEqual(['a', 'b', 'c']);
+    expect(concurrency.peak).toBeLessThanOrEqual(3);
+  });
+
+  it('clears the cached listing when the host listing fails', async () => {
+    const failing = { integrationGet: 0 };
+    const accounts = new GrokBuildAccounts({
+      get: () => {
+        failing.integrationGet += 1;
+        return Promise.reject(new Error('host offline'));
+      },
+      connection: { active: () => Promise.resolve(undefined), resolve: vi.fn() },
+    } as never);
+
+    await expect(accounts.list()).rejects.toThrow('host offline');
+    await expect(accounts.list()).rejects.toThrow('host offline');
+    expect(failing.integrationGet).toBe(2);
   });
 });

@@ -1,142 +1,91 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_CONFIG, type OpenGrokBuildConfig } from '../../src/config.js';
-import type { BillingUsage } from '../../src/opencode/billing.js';
+import type { CachedQuota } from '../../src/opencode/quotaCache.js';
 import {
-  EXHAUSTED_BALANCE_ERROR,
   ExhaustionRotation,
-  isExactExhaustionError,
+  isExactExhaustionResponse,
   orderAccountsByQuota,
   RECENT_EXHAUSTION_COOLDOWN_MS,
 } from '../../src/opencode/rotation.js';
 
-const NOW = Date.parse('2026-07-25T12:00:00.000Z');
+const A = 'credential:cred_a';
+const B = 'credential:cred_b';
+const E = 'env:GROK_BUILD_OAUTH_TOKEN';
+const ACCOUNTS = [A, B, E];
+const NOW = Date.parse('2026-07-25T10:00:00.000Z');
 
-function config(): OpenGrokBuildConfig {
+function quota(percent: number, updatedAt = new Date(NOW).toISOString()): CachedQuota {
   return {
-    ...DEFAULT_CONFIG,
-    accounts: {
-      nextAccountNumber: 4,
-      selectedProvider: 'grok-build',
-      items: [
-        { provider: 'grok-build', label: 'Personal' },
-        { provider: 'grok-build-2', label: 'Work' },
-        { provider: 'grok-build-3', label: 'Client' },
-      ],
-    },
-  };
-}
-
-function quota(percent: number): BillingUsage & { updatedAt: string } {
-  return {
-    updatedAt: new Date(NOW).toISOString(),
-    credits: {
-      creditUsagePercent: percent,
-      billingPeriodEnd: '2026-08-01T00:00:00.000Z',
-    },
+    updatedAt,
+    credits: { creditUsagePercent: percent, billingPeriodEnd: '2026-08-01T00:00:00.000Z' },
   };
 }
 
 describe('Grok Build exhaustion rotation', () => {
-  it('matches only the exact final 402 exhaustion error', () => {
-    expect(isExactExhaustionError(EXHAUSTED_BALANCE_ERROR)).toBe(true);
-    expect(
-      isExactExhaustionError('OpenAI API error (402): 402 "Grok Build usage balance exhausted".'),
-    ).toBe(false);
-    expect(isExactExhaustionError('OpenAI API error (402): payment required')).toBe(false);
+  it.each([
+    ['402 "Grok Build usage balance exhausted"', true],
+    ['"Grok Build usage balance exhausted"', true],
+    ['Grok Build usage balance exhausted', true],
+    ['{"error":"Grok Build usage balance exhausted"}', true],
+    ['{"error":{"message":"Grok Build usage balance exhausted"}}', true],
+    ['Grok Build usage balance exhausted.', false],
+    ['{"error":"other"}', false],
+    ['not json {', false],
+  ])('matches the exact 402 exhaustion body %s', (body, expected) => {
+    expect(isExactExhaustionResponse(402, body)).toBe(expected);
+    expect(isExactExhaustionResponse(401, body)).toBe(false);
   });
 
-  it('uses circular account order and skips unauthenticated aliases', () => {
+  it('rotates circularly and skips exhausted accounts', () => {
     const rotation = new ExhaustionRotation();
-    rotation.markExhausted('grok-build-3', EXHAUSTED_BALANCE_ERROR, NOW);
 
-    expect(
-      rotation.candidates({
-        config: config(),
-        currentProvider: 'grok-build-3',
-        authenticatedProviders: ['grok-build-2', 'grok-build-3'],
-        now: NOW,
-      }),
-    ).toEqual(['grok-build-2']);
+    expect(rotation.candidates({ accounts: ACCOUNTS, current: B, now: NOW })).toEqual([E, A]);
+    expect(rotation.candidates({ accounts: ACCOUNTS, current: 'credential:gone' })).toEqual([]);
+
+    rotation.markExhausted(E, NOW);
+
+    expect(rotation.isExhausted(E, NOW)).toBe(true);
+    expect(rotation.candidates({ accounts: ACCOUNTS, current: B, now: NOW })).toEqual([A]);
   });
 
-  it('orders fresh cached quota by greatest remaining allowance', () => {
-    expect(
-      orderAccountsByQuota(
-        ['grok-build-2', 'grok-build-3'],
-        {
-          'grok-build-2': quota(90),
-          'grok-build-3': quota(40),
-        },
-        NOW,
-      ),
-    ).toEqual(['grok-build-3', 'grok-build-2']);
+  it('prefers the account with the most remaining quota', () => {
+    const accounts = { [A]: quota(80), [B]: quota(10) };
+
+    expect(orderAccountsByQuota([A, B], accounts, NOW)).toEqual([B, A]);
+    expect(orderAccountsByQuota([A, B, E], accounts, NOW)).toEqual([B, A, E]);
   });
 
-  it('leaves stale and unknown quota positions in circular order', () => {
-    expect(
-      orderAccountsByQuota(
-        ['grok-build-2', 'grok-build-3', 'grok-build'],
-        {
-          'grok-build-3': {
-            ...quota(90),
-            updatedAt: new Date(NOW - 30 * 60_000).toISOString(),
-          },
-          'grok-build': quota(20),
-        },
-        NOW,
-      ),
-    ).toEqual(['grok-build-2', 'grok-build-3', 'grok-build']);
+  it('ignores stale quota entries when ordering', () => {
+    const stale = quota(5, new Date(NOW - 60 * 60_000).toISOString());
+
+    expect(orderAccountsByQuota([A, B], { [A]: quota(90), [B]: stale }, NOW)).toEqual([A, B]);
   });
 
-  it('keeps exhausted accounts ineligible for exactly five minutes across chains', () => {
+  it('keeps recently exhausted accounts out until the cooldown expires', () => {
     const rotation = new ExhaustionRotation();
-    rotation.markExhausted('grok-build', EXHAUSTED_BALANCE_ERROR, NOW);
+    rotation.markExhausted(A, NOW);
     rotation.clearChain();
 
+    expect(rotation.candidates({ accounts: ACCOUNTS, current: B, now: NOW })).toEqual([E]);
     expect(
       rotation.candidates({
-        config: config(),
-        currentProvider: 'grok-build-2',
-        authenticatedProviders: ['grok-build', 'grok-build-2'],
-        now: NOW + RECENT_EXHAUSTION_COOLDOWN_MS - 1,
-      }),
-    ).toEqual([]);
-    expect(
-      rotation.candidates({
-        config: config(),
-        currentProvider: 'grok-build-2',
-        authenticatedProviders: ['grok-build', 'grok-build-2'],
+        accounts: ACCOUNTS,
+        current: B,
         now: NOW + RECENT_EXHAUSTION_COOLDOWN_MS,
       }),
-    ).toEqual(['grok-build']);
+    ).toEqual([E, A]);
   });
 
-  it('tracks unavailable candidates and clears recent exhaustion on login', () => {
+  it('drops unavailable accounts and clears a recent exhaustion on request', () => {
     const rotation = new ExhaustionRotation();
-    rotation.markUnavailable('grok-build-2');
-    rotation.markExhausted('grok-build-3', EXHAUSTED_BALANCE_ERROR, NOW);
+    rotation.markUnavailable(E);
+    rotation.markExhausted(A, NOW);
 
-    expect(
-      rotation.candidates({
-        config: config(),
-        currentProvider: 'grok-build',
-        authenticatedProviders: ['grok-build', 'grok-build-2', 'grok-build-3'],
-        now: NOW,
-      }),
-    ).toEqual([]);
-    expect(
-      rotation.allAuthenticatedAccountsExhausted(config(), ['grok-build', 'grok-build-3'], NOW),
-    ).toBe(false);
+    expect(rotation.candidates({ accounts: ACCOUNTS, current: B, now: NOW })).toEqual([]);
 
-    rotation.clearRecentExhaustion('grok-build-3');
+    rotation.clearRecentExhaustion(A);
     rotation.clearChain();
-    expect(
-      rotation.candidates({
-        config: config(),
-        currentProvider: 'grok-build',
-        authenticatedProviders: ['grok-build', 'grok-build-3'],
-        now: NOW,
-      }),
-    ).toEqual(['grok-build-3']);
+
+    expect(rotation.isExhausted(A, NOW)).toBe(false);
+    expect(rotation.candidates({ accounts: ACCOUNTS, current: B, now: NOW })).toEqual([E, A]);
   });
 });

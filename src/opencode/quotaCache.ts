@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { isGrokBuildAccount } from '../config.js';
+import { hasTerminalControlCharacters } from '../config.js';
 import { getQuotaCachePath, withFileLock, writeFileAtomic } from '../storage.js';
 import {
   type BillingUsage,
@@ -88,6 +88,10 @@ function parseCachedQuota(value: unknown): CachedQuota | undefined {
   };
 }
 
+function isAccountKey(value: string) {
+  return value.length > 0 && value.length <= 256 && !hasTerminalControlCharacters(value);
+}
+
 export function loadQuotaCache(path = getQuotaCachePath()): QuotaCache {
   try {
     const raw: unknown = JSON.parse(readFileSync(path, 'utf8'));
@@ -97,9 +101,9 @@ export function loadQuotaCache(path = getQuotaCachePath()): QuotaCache {
     return {
       version: 1,
       accounts: Object.fromEntries(
-        Object.entries(raw.accounts).flatMap(([provider, value]) => {
-          const entry = isGrokBuildAccount(provider) ? parseCachedQuota(value) : undefined;
-          return entry ? [[provider, entry]] : [];
+        Object.entries(raw.accounts).flatMap(([key, value]) => {
+          const entry = isAccountKey(key) ? parseCachedQuota(value) : undefined;
+          return entry ? [[key, entry]] : [];
         }),
       ),
     };
@@ -131,26 +135,26 @@ async function updateQuotaCache(
 }
 
 export function saveQuotaUsage(
-  provider: string,
+  key: string,
   usage: BillingUsage,
   updatedAt = new Date().toISOString(),
   path = getQuotaCachePath(),
 ) {
-  if (!isGrokBuildAccount(provider)) {
-    return Promise.reject(new Error(`Invalid Grok Build account ID: ${provider}`));
+  if (!isAccountKey(key)) {
+    return Promise.reject(new Error(`Invalid Grok Build account key: ${key}`));
   }
   const entry = parseCachedQuota({ updatedAt, ...usage });
   if (!entry) return Promise.reject(new Error('Invalid quota usage'));
   return updateQuotaCache((cache) => {
-    cache.accounts[provider] = entry;
+    cache.accounts[key] = entry;
     return true;
   }, path);
 }
 
-export function removeQuotaUsage(provider: string, path = getQuotaCachePath()) {
+export function removeQuotaUsage(key: string, path = getQuotaCachePath()) {
   return updateQuotaCache((cache) => {
-    if (!existsSync(path) || !cache.accounts[provider]) return false;
-    delete cache.accounts[provider];
+    if (!existsSync(path) || !cache.accounts[key]) return false;
+    delete cache.accounts[key];
     return true;
   }, path);
 }
