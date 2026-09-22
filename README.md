@@ -12,21 +12,21 @@
 
 Use Grok Build models in [OpenCode](https://opencode.ai/) with OAuth, account rotation, quota tracking, and Grok Imagine image generation.
 
-- **OAuth login:** Sign in through a browser, device code, or pasted callback. OpenCode stores the credentials and refreshes them.
-- **Multiple accounts:** Manage connected accounts in a private browser dashboard and switch automatically when a balance runs out.
-- **Usage tracking:** Check the selected account's subscription tier, weekly allowance, and reset time.
-- **Protocol support:** Preserve reasoning continuity, expose reasoning-effort variants, and recover from proxy errors with a fresh conversation ID.
-- **Image generation:** Generate and edit images with Grok Imagine from a slash command or the `image_gen` tool.
+- **OAuth login** — browser, device code, or pasted callback. OpenCode stores and refreshes the credentials.
+- **Multiple accounts** — manage them in a private browser dashboard and switch automatically when a balance runs out.
+- **Usage tracking** — subscription tier, weekly allowance, and reset time for the selected account.
+- **Protocol support** — reasoning continuity, reasoning-effort variants, and recovery from proxy errors with a fresh conversation ID.
+- **Image generation** — Grok Imagine from a slash command or the `image_gen` tool.
 
 > Requires OpenCode 2.0 or newer and an xAI account with access to the selected model. Availability varies by account, plan, region, and xAI rollout. The Grok Build executable is not required.
 >
-> Upgrading from open-grok-build 0.2.x? See [Migrating from v1](#migrating-from-v1).
+> On open-grok-build 0.3.x or earlier? See [Migrating from v1](#migrating-from-v1).
 >
 > This is an unofficial community integration. It does not bypass xAI access controls, quotas, or billing.
 
 ## Quick start
 
-### 1. Install the plugin
+### 1. Install
 
 ```bash
 opencode plugin add open-grok-build
@@ -41,71 +41,45 @@ Or add it to `opencode.json` yourself:
 }
 ```
 
-Restart OpenCode. One entry loads both parts of the package: the server plugin (provider, authentication, requests) and the TUI plugin (slash commands and the dashboard).
+Restart OpenCode. The single entry loads both halves of the package — the server plugin (provider, authentication, requests) and the TUI plugin (slash commands, dashboard).
 
 ### 2. Connect an account
 
-Inside OpenCode, run:
+Run `/connect`, choose **Grok Build**, then pick a method:
 
-```text
-/connect
-```
-
-Choose **Grok Build**, then one of these methods:
-
-- **Browser login (default):** Opens xAI authorization with a local callback.
-- **Device login (headless):** Displays a URL and short code for SSH, containers, and remote hosts.
-- **Paste callback code (remote):** Accepts an OAuth callback URL, query string, or one-time code.
+- **Browser login (default)** — xAI authorization with a local callback.
+- **Device login (headless)** — URL plus short code, for SSH, containers, and remote hosts.
+- **Paste callback code (remote)** — accepts a callback URL, query string, or one-time code.
 
 Setting `GROK_BUILD_OAUTH_TOKEN` adds a fourth, environment-managed connection instead.
 
 ### 3. Select a model
 
-```text
-/models
-```
-
-Pick a model under the `grok-build` provider, for example `grok-build/grok-4.7`. Reasoning models expose effort variants; append one to the model ID:
+Run `/models` and pick one under the `grok-build` provider, for example `grok-build/grok-4.7`. Reasoning models take an effort variant appended to the ID:
 
 ```text
 grok-build/grok-4.7#xhigh
 ```
 
-`#low`, `#medium`, and `#high` are available on every reasoning model. `#xhigh` (Extra High) is available on `grok-4.6`, `grok-4.7`, and `grok-4.7-build-fast`.
+`#low`, `#medium`, and `#high` work on every reasoning model. `#xhigh` is available on `grok-4.6`, `grok-4.7`, and `grok-4.7-build-fast`.
 
-### 4. Verify account usage
+### 4. Check usage
 
-```text
-/grok-build-usage
-```
+`/grok-build-usage` shows the selected account's subscription tier, weekly allowance usage, and reset time in a toast, without consuming an LLM turn.
 
-This shows the selected account's subscription tier, weekly allowance usage, and reset time in a toast, without consuming an LLM turn.
+## Multiple accounts
 
-## Manage multiple accounts
+`/grok-build-accounts` opens a private browser dashboard that can add, rename, select, sign in, remove, and refresh accounts and their quota. Only add accounts you own or are authorized to access.
 
-Open the private browser dashboard:
+Every account is a credential of the same `grok-build` integration, so extra accounts never add duplicate providers to the model picker.
 
-```text
-/grok-build-accounts
-```
+When Grok returns the exact final balance-exhausted response, the plugin skips that account for five minutes, selects another connected account — preferring the one with the most weekly allowance remaining — and asks OpenCode to retry immediately. Rotation stops when no eligible account remains, and the original error surfaces. Authentication failures rotate too; rate limits and other errors do not.
 
-The dashboard can add, rename, select, log in, remove, and refresh accounts and their quota. Only add accounts that you own or are authorized to access.
-
-OpenCode still shows one `grok-build` provider. Every connected account is a credential of the same integration, so extra accounts never add duplicate providers to the model picker.
-
-When Grok returns the exact final balance-exhausted response, open-grok-build:
-
-1. skips the exhausted account for five minutes;
-2. selects another connected account, preferring the one with the most weekly allowance remaining;
-3. asks OpenCode to retry the request immediately on that account.
-
-Rotation stops when no eligible account remains, and the original error surfaces. Authentication failures also rotate the account; rate limits and other errors do not.
-
-An account that comes from `GROK_BUILD_OAUTH_TOKEN` appears as **Environment token**. It can be selected and used, but it cannot be renamed, signed in, or removed from the dashboard — unset the variable and restart OpenCode instead.
+An account from `GROK_BUILD_OAUTH_TOKEN` appears as **Environment token**. It can be selected and used, but not renamed, signed in, or removed — unset the variable and restart OpenCode instead.
 
 ## Models
 
-The package ships a ten-model fallback catalog. `GROK_BUILD_MODELS` can replace the visible model list. Registered limits can differ from the limits that xAI enforces for an account.
+The package ships a ten-model fallback catalog; `GROK_BUILD_MODELS` can narrow the visible list. Registered limits can differ from the limits xAI enforces for an account.
 
 | Model ID | Registered context | Reasoning | Extra High | Input |
 | --- | ---: | --- | --- | --- |
@@ -126,7 +100,7 @@ The package ships a ten-model fallback catalog. `GROK_BUILD_MODELS` can replace 
 
 | Command | Description |
 | --- | --- |
-| `/grok-build-usage` | Fetch current quota, update its cache, and show cached data if the refresh fails. |
+| `/grok-build-usage` | Fetch current quota, update its cache, and fall back to cached data if the refresh fails. |
 | `/grok-build-accounts` | Open the account and quota dashboard. |
 | `/grok-build-imagine <prompt>` | Generate or edit an image with Grok Imagine. |
 | `/grok-build-imagine:tool [on\|off\|status]` | Turn the `image_gen` tool on or off, or report its state. |
@@ -141,40 +115,23 @@ The package ships a ten-model fallback catalog. `GROK_BUILD_MODELS` can replace 
 | Option | Default | Description |
 | --- | --- | --- |
 | `--aspect`, `--aspect-ratio` | `auto` | One of `auto`, `1:1`, `16:9`, `9:16`, `4:3`, `3:4`, `3:2`, `2:3`, `2:1`, `1:2`, `19.5:9`, `9:19.5`, `20:9`, `9:20`. |
-| `--image`, `--edit` | none | Local PNG, JPEG, or WebP file to edit. Relative paths resolve against the project directory. |
-| `--out`, `-o` | timestamped file in the session directory | Write the image to this path instead. |
+| `--image`, `--edit` | none | Local PNG, JPEG, or WebP to edit, at most 400 KiB. Relative paths resolve against the project directory. |
+| `--out`, `-o` | timestamped file in the session directory | Write the image here instead. |
 | `--resolution` | `1k` | Only `1k` is available. |
 
-Images are saved as JPEG under:
+Images are saved as JPEG under `~/.local/share/opencode/open-grok-build/images/<session id>/<timestamp>.jpg`; a request without a session ID falls back to a `no-session` directory.
 
-```text
-~/.local/share/opencode/open-grok-build/images/<session id>/<timestamp>.jpg
-```
-
-A request without a session ID falls back to a `no-session` directory.
-
-The `image_gen` tool exposes the same generation and editing to the model with `prompt`, `image`, and `aspect_ratio` inputs, and returns the saved absolute path. It is registered only while `imagine.enabled` is true; `/grok-build-imagine:tool off` persists the setting and reloads the tool list. The slash command works either way.
-
-Source images for an edit must be PNG, JPEG, or WebP and at most 400 KiB. Resize or compress larger files first.
+The `image_gen` tool exposes the same generation and editing to the model via `prompt`, `image`, and `aspect_ratio`, and returns the saved absolute path. It is registered only while `imagine.enabled` is true — `/grok-build-imagine:tool off` persists the setting and reloads the tool list. The slash command works either way.
 
 ## Configuration
 
-The package exposes three entry points, all loaded from one `plugins` entry:
-
-- `open-grok-build` — provider, integration, request hooks, Imagine, and the plugin RPC.
-- `open-grok-build/tui` — slash commands, usage toast, and the account dashboard.
-- `open-grok-build/rpc` — the RPC contract shared by the two.
-
-Plugin-owned state is stored under:
+Plugin-owned state lives under `~/.local/share/opencode/open-grok-build/` (`XDG_DATA_HOME` is honored):
 
 ```text
-~/.local/share/opencode/open-grok-build/
-├── config.json
-├── quota-cache.json
-└── images/
+config.json      # version, selected account, imagine toggle
+quota-cache.json # last billing response per account
+images/
 ```
-
-`XDG_DATA_HOME` is honored. `config.json` is:
 
 ```json
 {
@@ -184,7 +141,7 @@ Plugin-owned state is stored under:
 }
 ```
 
-`quota-cache.json` stores the last billing response per account. OAuth credentials live in OpenCode's credential store and are never copied into plugin state.
+OAuth credentials live in OpenCode's credential store and are never copied into plugin state. Config and cache writes are atomic and owner-only.
 
 ### Environment variables
 
@@ -207,44 +164,43 @@ Plugin-owned state is stored under:
 | --- | --- |
 | `grok-build` is missing from the model picker | Confirm the package is listed under `plugins` in `opencode.json`, then restart OpenCode. |
 | Commands are missing from the `/` menu | The TUI entry loads with the same `plugins` entry; restart OpenCode and check its log for plugin load errors. |
-| xAI shows a one-time code | Use **Paste callback code (remote)** and paste the code. |
-| Browser login does not return to OpenCode | Use **Paste callback code (remote)** or **Device login (headless)**. |
-| Authentication returns HTTP 401 or 403 | Run `/connect` again and confirm that the account can access the selected model. |
-| Requests fail with HTTP 401, 502, or 520 | The plugin retries these with a new conversation ID, at most twice before the next successful response. A third failure surfaces the error. |
+| Browser login does not return, or xAI shows a one-time code | Use **Paste callback code (remote)** or **Device login (headless)**. |
+| Authentication returns HTTP 401 or 403 | Run `/connect` again and confirm the account can access the selected model. |
+| Requests fail with HTTP 401, 502, or 520 | These are retried with a new conversation ID, at most twice before the next successful response. A third failure surfaces the error. |
 | Balance exhausted | Connect a second account so rotation has a candidate. With no eligible account the 402 is shown. |
-| A listed model is unavailable | Try another model. Availability can differ by account, plan, region, and rollout. |
-| The dashboard reports a lost connection | Run `/grok-build-accounts` again to open a new dashboard session. |
+| A listed model is unavailable | Try another. Availability differs by account, plan, region, and rollout. |
+| The dashboard reports a lost connection | Run `/grok-build-accounts` again for a new dashboard session. |
 | Imagine reports HTTP 401 | Run `/connect` and choose Grok Build, or set `GROK_BUILD_OAUTH_TOKEN`. |
 
 ## Migrating from v1
 
-open-grok-build 0.3 requires OpenCode 2.0 and does not load in OpenCode 1.x.
+open-grok-build 0.4 requires OpenCode 2.0 and does not load in OpenCode 1.x. The last release supporting OpenCode 1.x is 0.3.0.
 
 - Configuration moved from the `plugin` key to the `plugins` array; a separate `tui.json` entry is no longer needed.
 - Authentication is owned by OpenCode: `/connect` replaces `/connect grok-build` slots, and the plugin no longer reads `auth.json` or `OPENCODE_AUTH_CONTENT`.
-- The internal `grok-build-2`, `grok-build-3`, … account slots are gone. Each account is a credential of the `grok-build` integration, every account can be removed, and there is no privileged primary account.
+- The internal `grok-build-2`, `grok-build-3`, … account slots are gone. Each account is a credential of the `grok-build` integration, every account can be removed, and there is no privileged primary account.:qa
 - The plugin's own `config.json` is reset to defaults the first time a version-1 file is loaded, and the reset is reported as a warning. Reconnect extra accounts with `/connect` or the dashboard.
+
+Why the package does not support both versions at once: [docs/OPENCODE_V1_V2_DUAL_SUPPORT.md](./docs/OPENCODE_V1_V2_DUAL_SUPPORT.md).
 
 ## Security and data flow
 
-Prompts, model context, and image inputs are sent to the configured Grok Build endpoint. Imagine prompts and source images are sent to the configured Imagine endpoint. Custom endpoint overrides also receive bearer credentials. Only use endpoints that you trust.
+Prompts, model context, and image inputs are sent to the configured Grok Build endpoint; Imagine prompts and source images go to the configured Imagine endpoint. Custom endpoint overrides also receive bearer credentials — only use endpoints you trust.
 
-The account dashboard binds to `127.0.0.1` on an ephemeral port. It uses a one-use bootstrap capability, an HttpOnly SameSite cookie, CSRF and Origin checks, strict Host validation, a content security policy, bounded request bodies, and idle shutdown. Dashboard responses do not include OAuth credentials or secrets.
+The account dashboard binds to `127.0.0.1` on an ephemeral port, behind a one-use bootstrap capability, an HttpOnly SameSite cookie, CSRF and Origin checks, strict Host validation, a content security policy, bounded request bodies, and idle shutdown. Dashboard responses never include OAuth credentials or secrets.
 
-Config and cache writes are atomic and owner-only. Never include tokens, authorization codes, callback URLs, prompts, or private project data in public issues.
+Never include tokens, authorization codes, callback URLs, prompts, or private project data in public issues.
 
 ## Support and contributing
 
 Report bugs and feature requests through [GitHub Issues](https://github.com/kenryu42/open-grok-build/issues). Include the OpenCode version, open-grok-build version, selected model, login method, and exact error message.
-
-For local development:
 
 ```bash
 bun install
 bun run check
 ```
 
-See [docs/LOCAL_OPENCODE_TESTING.md](./docs/LOCAL_OPENCODE_TESTING.md) for running a checkout against OpenCode.
+See [docs/LOCAL_OPENCODE_TESTING.md](./docs/LOCAL_OPENCODE_TESTING.md) for running a checkout against OpenCode, and [docs/OPENCODE_PLUGIN_SETUP.md](./docs/OPENCODE_PLUGIN_SETUP.md) for how OpenCode resolves the plugin entries.
 
 Pull requests should include tests for behavior changes and pass `bun run check`.
 
