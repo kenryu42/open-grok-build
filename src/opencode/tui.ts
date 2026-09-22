@@ -29,28 +29,48 @@ function openBrowser(url: string, onError: () => void, onOpened: () => void) {
   child.unref();
 }
 
-function dashboardHost(context: Plugin.Context): DashboardHost {
+type PluginLocation = Plugin.Context['location'];
+
+function dashboardHost(context: Plugin.Context, location: PluginLocation): DashboardHost {
   const rpc = context.client.rpc(OpenGrokBuildRpc);
+  const oauth = context.client.integration.oauth;
   return {
-    accountsList: () => rpc['accounts.list']({}),
-    accountsSelect: (key) => rpc['accounts.select']({ key }),
-    quotasRefresh: (keys, signal) => rpc['quotas.refresh']({ keys }, { signal }),
+    accountsList: () => rpc['accounts.list']({}, { location }),
+    accountsSelect: (key) => rpc['accounts.select']({ key }, { location }),
+    quotasRefresh: (keys, signal) => rpc['quotas.refresh']({ keys }, { location, signal }),
     credential: context.client.credential,
-    oauth: context.client.integration.oauth,
+    oauth: {
+      connect: (input) => oauth.connect({ ...input, location }),
+      status: (input) => oauth.status({ ...input, location }),
+      cancel: (input) => oauth.cancel({ ...input, location }),
+    },
   };
 }
 
-const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
+// RPC rejections arrive as plain objects, so `String(error)` would render
+// "[object Object]" instead of the server's message.
+function errorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    const message = (error as { message: unknown }).message;
+    if (typeof message === 'string' && message) return message;
+  }
+  return String(error);
+}
 
 async function setup(context: Plugin.Context) {
+  // Plugin RPC and integrations are registered per location. Without this the
+  // server resolves its default location, where this plugin is not loaded, and
+  // every call fails with "RPC is unavailable".
+  const location = context.location ?? context.data.location.default();
   const rpc = context.client.rpc(OpenGrokBuildRpc);
-  const manager = new OpenCodeAccountDashboardManager(dashboardHost(context));
+  const manager = new OpenCodeAccountDashboardManager(dashboardHost(context, location));
   const state: { dashboard?: AccountDashboardHandle } = {};
   const toast = (message: string, variant: 'info' | 'error' = 'info') =>
     context.ui.toast.show({ title: 'Grok Build', message, variant, duration: 8_000 });
 
   const showUsage = () =>
-    rpc['usage.report']({}).then(
+    rpc['usage.report']({}, { location }).then(
       (report) => toast(formatUsageToastMessage(report.lines)),
       (error: unknown) => toast(errorMessage(error), 'error'),
     );

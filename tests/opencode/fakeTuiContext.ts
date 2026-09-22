@@ -9,6 +9,8 @@ type SlotClaim = Parameters<Plugin.Context['ui']['slot']>[0];
 
 export type RpcMethod = 'accounts.list' | 'accounts.select' | 'usage.report' | 'quotas.refresh';
 
+export type RpcCall = { method: string; input: unknown; options?: { location?: unknown } };
+
 export function fakeTuiContext(
   handlers: Partial<Record<RpcMethod, (input: unknown) => Promise<unknown>>> = {},
 ) {
@@ -20,16 +22,31 @@ export function fakeTuiContext(
   const rendering = { active: false };
   const credential = { activate: vi.fn(), update: vi.fn(), remove: vi.fn() };
   const oauth = { connect: vi.fn(), status: vi.fn(), cancel: vi.fn() };
+  const rpcCalls: RpcCall[] = [];
+  const rpc = () =>
+    new Proxy(
+      {},
+      {
+        get: (_target, name: string) => (input: unknown, options?: { location?: unknown }) => {
+          rpcCalls.push({ method: name, input, options });
+          const handler = handlers[name as RpcMethod];
+          return handler ? handler(input) : Promise.resolve({});
+        },
+      },
+    );
   const context = {
     options: {},
     location: { directory: process.cwd() },
     app: { version: '2.0.12', channel: 'stable' },
     client: {
-      rpc: () => handlers,
+      rpc,
       credential,
       integration: { oauth },
     },
-    data: { on: () => () => undefined },
+    data: {
+      on: () => () => undefined,
+      location: { default: () => ({ directory: '/fallback' }) },
+    },
     keymap: {
       layer: (build: () => KeymapLayer) => {
         if (!rendering.active) throw new Error('Keymap.Provider is missing');
@@ -58,6 +75,7 @@ export function fakeTuiContext(
     slots,
     toasts,
     render,
+    rpcCalls,
     credential,
     oauth,
   };

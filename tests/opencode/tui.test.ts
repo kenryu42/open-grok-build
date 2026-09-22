@@ -6,6 +6,19 @@ function usageHandlers(lines: string[]) {
   return { 'usage.report': () => Promise.resolve({ lines }) };
 }
 
+async function runUsage(fake: ReturnType<typeof fakeTuiContext>) {
+  const cleanup = await plugin.setup(fake.context);
+  fake.render();
+  await tuiCommand(fake.layers, 'grok-build-usage').run();
+  await cleanup?.();
+}
+
+async function usageFailure(rejection: unknown) {
+  const fake = fakeTuiContext({ 'usage.report': () => Promise.reject(rejection) });
+  await runUsage(fake);
+  return fake.toasts[0];
+}
+
 describe('Open Grok Build TUI plugin', () => {
   it('registers the usage and accounts slash commands', async () => {
     const fake = fakeTuiContext();
@@ -46,17 +59,31 @@ describe('Open Grok Build TUI plugin', () => {
     await cleanup?.();
   });
 
-  it('reports a failed usage lookup as an error toast', async () => {
-    const fake = fakeTuiContext({
-      'usage.report': () => Promise.reject(new Error('no account')),
+  it('calls the plugin RPC at its own location', async () => {
+    const fake = fakeTuiContext(usageHandlers(['ok']));
+
+    await runUsage(fake);
+
+    expect(fake.rpcCalls).toContainEqual(
+      expect.objectContaining({
+        method: 'usage.report',
+        options: expect.objectContaining({ location: { directory: process.cwd() } }),
+      }),
+    );
+  });
+
+  it('reports a plain RPC error object with its message', async () => {
+    expect(await usageFailure({ message: 'RPC is unavailable: open-grok-build' })).toMatchObject({
+      variant: 'error',
+      message: 'RPC is unavailable: open-grok-build',
     });
+  });
 
-    const cleanup = await plugin.setup(fake.context);
-    fake.render();
-    await tuiCommand(fake.layers, 'grok-build-usage').run();
-
-    expect(fake.toasts[0]).toMatchObject({ variant: 'error', message: 'no account' });
-    await cleanup?.();
+  it('reports a failed usage lookup as an error toast', async () => {
+    expect(await usageFailure(new Error('no account'))).toMatchObject({
+      variant: 'error',
+      message: 'no account',
+    });
   });
 
   it('closes the dashboard when the browser cannot be opened', async () => {
