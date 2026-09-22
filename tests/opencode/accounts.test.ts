@@ -9,7 +9,7 @@ import {
   refreshAccountQuotas,
 } from '../../src/opencode/accounts.js';
 import { useTempOpenCodeHome } from '../stateTestHelpers.js';
-import { fakeContext } from './fakeContext.js';
+import { CRED_A, CRED_B, fakeContext } from './fakeContext.js';
 
 const useTempHome = useTempOpenCodeHome('open-grok-build-accounts-');
 const CRED_1 = 'credential:cred_1';
@@ -106,6 +106,25 @@ describe('Grok Build host accounts', () => {
 
     saveConfig({ ...DEFAULT_CONFIG, accounts: { selected: 'credential:gone' } });
     expect((await accounts.selected())?.key).toBe(CRED_1);
+  });
+
+  it('falls back to the host active connection when nothing is selected', async () => {
+    useTempHome();
+    const { accounts } = accountsFor(
+      fakeContext({ connections: [CRED_A, CRED_B], active: CRED_B }),
+    );
+
+    expect((await accounts.selected())?.key).toBe('credential:cred_b');
+  });
+
+  it('an explicit selection clears session pins', async () => {
+    useTempHome();
+    const { accounts } = accountsFor(fakeContext({ connections: [CRED_A, CRED_B] }));
+
+    await accounts.select('credential:cred_b', 'ses_1');
+    await accounts.select('credential:cred_a');
+
+    expect((await accounts.selected('ses_1'))?.key).toBe('credential:cred_a');
   });
 
   it('pins a session to an account until the session is forgotten', async () => {

@@ -11,6 +11,7 @@ export type FakeCredential =
 
 export interface FakeContextOptions {
   connections?: FakeConnection[];
+  active?: FakeConnection;
   credentials?: Record<string, FakeCredential>;
   environmentToken?: string;
   directory?: string;
@@ -119,7 +120,7 @@ export function fakeContext(options: FakeContextOptions = {}) {
         });
       },
       connection: {
-        active: () => Promise.resolve(connections[0]),
+        active: () => Promise.resolve(options.active ?? connections[0]),
         resolve: (connection: FakeConnection) => {
           calls.resolve.push(connection);
           if (connection.type === 'env') {

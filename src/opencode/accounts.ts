@@ -65,13 +65,22 @@ export class GrokBuildAccounts {
     const accounts = await this.list();
     const wanted =
       (sessionID ? this.pins.get(sessionID) : undefined) ?? loadConfig().config.accounts.selected;
-    return accounts.find((account) => account.key === wanted) ?? accounts[0];
+    const active =
+      wanted === undefined
+        ? await this.host.connection.active(GROK_BUILD_INTEGRATION_ID)
+        : undefined;
+    return (
+      accounts.find((account) => account.key === wanted) ??
+      (active ? accounts.find((account) => account.key === connectionKey(active)) : undefined) ??
+      accounts[0]
+    );
   }
 
   async select(key: string, sessionID?: string) {
     const account = (await this.list()).find((candidate) => candidate.key === key);
     if (!account) throw new Error(`Unknown Grok Build account: ${key}`);
     updateConfig((config) => ({ ...config, accounts: { selected: key } }));
+    if (!sessionID) this.pins.clear();
     if (sessionID) this.pins.set(sessionID, key);
     return account;
   }

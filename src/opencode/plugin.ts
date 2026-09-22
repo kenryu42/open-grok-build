@@ -1,7 +1,7 @@
 import { Plugin } from '@opencode/plugin';
 import { registerImagine } from '../imagine/register.js';
 import { GrokBuildAccounts } from './accounts.js';
-import { registerGrokBuildIntegration } from './integration.js';
+import { GROK_BUILD_INTEGRATION_ID, registerGrokBuildIntegration } from './integration.js';
 import { grokBuildModels, grokBuildProvider } from './providerModels.js';
 import { GrokBuildRequests } from './requests.js';
 import { ExhaustionRotation } from './rotation.js';
@@ -63,6 +63,13 @@ async function setup(ctx: Plugin.Context) {
         event.type === 'integration.updated'
       ) {
         accounts.invalidate();
+      }
+      if (
+        event.type === 'credential.switched' &&
+        event.data.integrationID === GROK_BUILD_INTEGRATION_ID &&
+        typeof event.data.credentialID === 'string'
+      ) {
+        await accounts.select(`credential:${event.data.credentialID}`).catch(() => undefined);
       }
       if (event.type === 'session.deleted') await requests.forgetSession(event.data.sessionID);
     }

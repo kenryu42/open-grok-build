@@ -127,6 +127,20 @@ describe('Open Grok Build v2 plugin', () => {
     expect(fake.calls.integrationGet).toBeGreaterThan(1);
   });
 
+  it('follows a credential switched in OpenCode', async () => {
+    const { fake } = await setup([CRED_A, CRED_B]);
+
+    fake.events.push({
+      type: 'credential.switched',
+      data: { integrationID: 'grok-build', credentialID: 'cred_b' },
+    });
+    await vi.waitFor(() => expect(loadConfig().config.accounts.selected).toBe('credential:cred_b'));
+
+    expect((await serveRequest(fake, SESSION)).headers.get('authorization')).toBe(
+      'Bearer tok-cred_b',
+    );
+  });
+
   it('registers the Imagine tool and its commands', async () => {
     const { fake } = await setup();
 
