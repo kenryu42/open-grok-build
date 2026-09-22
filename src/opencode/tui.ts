@@ -71,31 +71,41 @@ async function setup(context: Plugin.Context) {
     );
   };
 
-  context.keymap.layer(() => ({
-    mode: 'global',
-    commands: [
-      {
-        id: GROK_BUILD_USAGE_TUI_COMMAND,
-        title: 'Grok Build usage',
-        description: GROK_BUILD_USAGE_DESCRIPTION,
-        group: 'Grok Build',
-        palette: true,
-        slash: { name: GROK_BUILD_USAGE_SLASH },
-        run: showUsage,
-      },
-      {
-        id: 'open-grok-build.accounts',
-        title: 'Grok Build accounts',
-        description: 'Open the private account and quota dashboard',
-        group: 'Grok Build',
-        palette: true,
-        slash: { name: 'grok-build-accounts' },
-        run: openDashboard,
-      },
-    ],
-  }));
+  // `keymap.layer` reads a Solid context, so it only works while a component
+  // renders. The `app` slot renders for the lifetime of the TUI and contributes
+  // nothing visible, which is how a plugin owns global commands.
+  const disposeCommands = context.ui.slot({
+    append: 'app',
+    render: () => {
+      context.keymap.layer(() => ({
+        mode: 'global',
+        commands: [
+          {
+            id: GROK_BUILD_USAGE_TUI_COMMAND,
+            title: 'Grok Build usage',
+            description: GROK_BUILD_USAGE_DESCRIPTION,
+            group: 'Grok Build',
+            palette: true,
+            slash: { name: GROK_BUILD_USAGE_SLASH },
+            run: showUsage,
+          },
+          {
+            id: 'open-grok-build.accounts',
+            title: 'Grok Build accounts',
+            description: 'Open the private account and quota dashboard',
+            group: 'Grok Build',
+            palette: true,
+            slash: { name: 'grok-build-accounts' },
+            run: openDashboard,
+          },
+        ],
+      }));
+      return null;
+    },
+  });
 
   return async () => {
+    disposeCommands();
     await state.dashboard?.close();
   };
 }

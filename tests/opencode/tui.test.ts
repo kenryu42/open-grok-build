@@ -11,8 +11,10 @@ describe('Open Grok Build TUI plugin', () => {
     const fake = fakeTuiContext();
 
     const cleanup = await plugin.setup(fake.context);
+    fake.render();
 
     expect(plugin.id).toBe('open-grok-build.tui');
+    expect(fake.slots.map((claim) => claim.append)).toEqual(['app']);
     expect(tuiCommands(fake.layers).map((command) => command.slash?.name)).toEqual([
       'grok-build-usage',
       'grok-build-accounts',
@@ -30,6 +32,7 @@ describe('Open Grok Build TUI plugin', () => {
     const fake = fakeTuiContext(usageHandlers(['  Account: Work', '    10%']));
 
     const cleanup = await plugin.setup(fake.context);
+    fake.render();
     await tuiCommand(fake.layers, 'grok-build-usage').run();
 
     expect(fake.toasts).toEqual([
@@ -49,6 +52,7 @@ describe('Open Grok Build TUI plugin', () => {
     });
 
     const cleanup = await plugin.setup(fake.context);
+    fake.render();
     await tuiCommand(fake.layers, 'grok-build-usage').run();
 
     expect(fake.toasts[0]).toMatchObject({ variant: 'error', message: 'no account' });
@@ -62,6 +66,7 @@ describe('Open Grok Build TUI plugin', () => {
     });
 
     const cleanup = await plugin.setup(fake.context);
+    fake.render();
     await tuiCommand(fake.layers, 'grok-build-accounts').run();
     await vi.waitFor(() => expect(fake.toasts).toHaveLength(1));
 
