@@ -1,6 +1,6 @@
 {
   "name": "open-grok-build",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Grok Build provider, OAuth, multi-account rotation, quota tracking and Imagine image generation for OpenCode v2.",
   "keywords": [
     "opencode",
