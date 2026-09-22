@@ -16,6 +16,8 @@ describe('model catalog', () => {
     expect(supportsReasoningEffort('grok-4.3')).toBe(true);
     expect(supportsReasoningEffort('grok-4.5')).toBe(true);
     expect(supportsReasoningEffort('grok-4.6')).toBe(true);
+    expect(supportsReasoningEffort('grok-4.7')).toBe(true);
+    expect(supportsReasoningEffort('grok-4.7-build-fast')).toBe(true);
     expect(supportsReasoningEffort('grok-build/GROK-COMPOSER-2.5-fast')).toBe(false);
     expect(supportsReasoningEffort('grok-4.20-0309-non-reasoning')).toBe(false);
   });
@@ -38,6 +40,8 @@ describe('model catalog', () => {
       'grok-4.3',
       'grok-4.5',
       'grok-4.6',
+      'grok-4.7',
+      'grok-4.7-build-fast',
       'grok-4.20-0309-reasoning',
       'grok-4.20-0309-non-reasoning',
       'grok-4.20-multi-agent-0309',
@@ -57,9 +61,40 @@ describe('model catalog', () => {
         cost: { input: 2, output: 6, cacheRead: 0.5, cacheWrite: 0 },
       });
     }
+    expect(models.filter((model) => model.id.startsWith('grok-4.7'))).toEqual([
+      expect.objectContaining({
+        id: 'grok-4.7',
+        name: 'Grok 4.7',
+        reasoning: true,
+        input: ['text', 'image'],
+        contextWindow: 500_000,
+        cost: { input: 2, output: 6, cacheRead: 0.5, cacheWrite: 0 },
+        thinkingLevelMap: { xhigh: 'xhigh' },
+      }),
+      expect.objectContaining({
+        id: 'grok-4.7-build-fast',
+        name: 'Grok 4.7 Fast',
+        reasoning: true,
+        input: ['text', 'image'],
+        contextWindow: 500_000,
+        cost: { input: 4, output: 12, cacheRead: 1, cacheWrite: 0 },
+        thinkingLevelMap: { xhigh: 'xhigh' },
+      }),
+    ]);
     expect(models.find((model) => model.id === 'grok-4.20-0309-reasoning')).toMatchObject({
       cost: { input: 1.25, output: 2.5, cacheRead: 0.2, cacheWrite: 0 },
     });
+  });
+
+  it('exposes Extra High only on xhigh-capable models', () => {
+    delete process.env.GROK_BUILD_MODELS;
+
+    const models = resolveModels();
+
+    expect(models.find((model) => model.id === 'grok-4.6')?.thinkingLevelMap).toEqual({
+      xhigh: 'xhigh',
+    });
+    expect(models.find((model) => model.id === 'grok-4.5')?.thinkingLevelMap).toBeUndefined();
   });
 
   it('filters, reorders, and fills unknown model overrides', () => {

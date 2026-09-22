@@ -9,6 +9,10 @@ const COST_COMPOSER_FAST = { input: 3, output: 15, cacheRead: 0.5, cacheWrite: 0
 const COST_43 = { input: 1.25, output: 2.5, cacheRead: 0.2, cacheWrite: 0 };
 const COST_45 = { input: 2, output: 6, cacheRead: 0.5, cacheWrite: 0 };
 const COST_46 = { input: 2, output: 6, cacheRead: 0.5, cacheWrite: 0 };
+const COST_47 = { input: 2, output: 6, cacheRead: 0.5, cacheWrite: 0 };
+// Grok 4.7 Fast is billed at twice the standard rate. This is the below-200K tier;
+// xAI doubles all three rates above 200K prompt tokens.
+const COST_47_FAST = { input: 4, output: 12, cacheRead: 1, cacheWrite: 0 };
 const COST_420 = { input: 1.25, output: 2.5, cacheRead: 0.2, cacheWrite: 0 };
 
 // ─── Model type ───────────────────────────────────────────────────────────────
@@ -88,6 +92,27 @@ const FALLBACK_MODELS: GrokBuildModelConfig[] = [
     cost: COST_46,
     contextWindow: 500_000,
     maxTokens: 30_000,
+    thinkingLevelMap: { xhigh: 'xhigh' },
+  },
+  {
+    id: 'grok-4.7',
+    name: 'Grok 4.7',
+    reasoning: true,
+    input: ['text', 'image'],
+    cost: COST_47,
+    contextWindow: 500_000,
+    maxTokens: 30_000,
+    thinkingLevelMap: { xhigh: 'xhigh' },
+  },
+  {
+    id: 'grok-4.7-build-fast',
+    name: 'Grok 4.7 Fast',
+    reasoning: true,
+    input: ['text', 'image'],
+    cost: COST_47_FAST,
+    contextWindow: 500_000,
+    maxTokens: 30_000,
+    thinkingLevelMap: { xhigh: 'xhigh' },
   },
   {
     id: 'grok-4.20-0309-reasoning',
@@ -132,6 +157,7 @@ const EFFORT_CAPABLE_PREFIXES = [
   'grok-4.3',
   'grok-4.5',
   'grok-4.6',
+  'grok-4.7',
 ];
 
 const normalizedModelName = (modelId: string) =>
