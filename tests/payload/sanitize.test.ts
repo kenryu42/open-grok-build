@@ -88,6 +88,60 @@ describe('payload sanitization', () => {
     expect(payload.include).toEqual(['reasoning.encrypted_content']);
   });
 
+  it.each([
+    'grok-4.7',
+    'grok-4.7-build-fast',
+  ])('preserves xhigh reasoning effort for %s', (modelId) => {
+    const payload = sanitizePayload(
+      {
+        input: 'plain prompt',
+        reasoning: { effort: 'xhigh' },
+      },
+      modelId,
+      undefined,
+      process.cwd(),
+    );
+
+    expect(payload.reasoning).toEqual({ effort: 'xhigh' });
+    expect(payload.include).toEqual(['reasoning.encrypted_content']);
+  });
+
+  it('drops malformed reasoning content while normalizing text parts', () => {
+    const payload = sanitizePayload(
+      {
+        input: [
+          {
+            type: 'reasoning',
+            id: 'reasoning-1',
+            content: [
+              'plain text',
+              null,
+              42,
+              ['nested'],
+              { ignored: true },
+              { text: 'missing discriminator' },
+              { type: 'future_reasoning_type', text: 'keep discriminator' },
+            ],
+          },
+        ],
+      },
+      'grok-build',
+      'session-123',
+      process.cwd(),
+    );
+
+    expect(payload.input).toEqual([
+      {
+        type: 'reasoning',
+        id: 'reasoning-1',
+        content: [
+          { type: 'reasoning_text', text: 'plain text' },
+          { type: 'reasoning_text', text: 'missing discriminator' },
+        ],
+      },
+    ]);
+  });
+
   it('preserves reasoning options while removing unsupported effort', () => {
     const payload = sanitizePayload(
       {
@@ -188,7 +242,6 @@ describe('payload sanitization', () => {
         content: [
           { type: 'reasoning_text', text: 'needs discriminator' },
           { type: 'reasoning_text', text: 'already typed' },
-          { type: 'future_reasoning_variant', text: 'future typed' },
         ],
       },
       input[2],

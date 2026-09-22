@@ -237,8 +237,10 @@ function normalizeReasoningContent(content: unknown) {
     }
     if (!part || typeof part !== 'object' || Array.isArray(part)) return [];
     const reasoningPart = part as Record<string, unknown>;
-    if (reasoningPart.type !== undefined) return [part];
-    if (typeof reasoningPart.text !== 'string') return [];
+    if (reasoningPart.type === 'reasoning_text' && typeof reasoningPart.text === 'string') {
+      return [part];
+    }
+    if (reasoningPart.type !== undefined || typeof reasoningPart.text !== 'string') return [];
     return [{ ...reasoningPart, type: 'reasoning_text' }];
   });
   return normalized.length ? normalized : undefined;
