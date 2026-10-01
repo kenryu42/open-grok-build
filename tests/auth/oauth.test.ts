@@ -372,7 +372,7 @@ describe('OAuth helpers without network access', () => {
 
     expect(fetchMock.mock.calls[1]?.[0]).toBe('https://auth.x.ai/oauth/token');
     expect(new Headers(fetchMock.mock.calls[1]?.[1]?.headers).get('x-grok-client-version')).toBe(
-      '0.2.111',
+      '1.0.46',
     );
     expect((fetchMock.mock.calls[1]?.[1]?.body as URLSearchParams).get('code')).toBe(
       'callback-code',
