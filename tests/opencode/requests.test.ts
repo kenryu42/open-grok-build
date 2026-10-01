@@ -4,7 +4,7 @@ import { GrokBuildAccounts } from '../../src/opencode/accounts.js';
 import { grokBuildUserAgent } from '../../src/opencode/identity.js';
 import { conversationStorageKey, GrokBuildRequests } from '../../src/opencode/requests.js';
 import { ExhaustionRotation } from '../../src/opencode/rotation.js';
-import { useTempOpenCodeHome } from '../stateTestHelpers.js';
+import { useStableVersionServer, useTempOpenCodeHome } from '../stateTestHelpers.js';
 import {
   answerRequest,
   CRED_A,
@@ -24,6 +24,7 @@ import {
 } from './fakeContext.js';
 
 const useTempHome = useTempOpenCodeHome('open-grok-build-requests-');
+const stableVersion = useStableVersionServer();
 const SESSION = 'ses_1';
 
 async function setup(connections: FakeConnection[] = [CRED_A]) {
@@ -74,8 +75,9 @@ describe('Grok Build session request hooks', () => {
     await invokeHook(fake, 'http.request', event);
 
     expect(header(event.request, 'authorization')).toBe('Bearer tok-cred_a');
-    expect(header(event.request, 'User-Agent')).toBe(grokBuildUserAgent());
-    expect(header(event.request, 'x-grok-client-identifier')).toBe('grok-pager');
+    expect(header(event.request, 'User-Agent')).toBe(grokBuildUserAgent('1.0.99'));
+    expect(header(event.request, 'x-grok-client-identifier')).toBe('grok-shell');
+    expect(header(event.request, 'x-grok-client-version')).toBe('1.0.99');
     expect(header(event.request, 'x-xai-token-auth')).toBe('xai-grok-cli');
     expect(header(event.request, 'x-grok-model-override')).toBe('grok-4.7');
     expect(header(event.request, 'x-grok-session-id')).toBe(SESSION);
@@ -196,6 +198,29 @@ describe('Grok Build session request hooks', () => {
 
     expect(recovered.decisions).toEqual([true]);
     expect(header(await serveRequest(fake, SESSION), 'x-grok-conv-id')).toBe(`${SESSION}:3`);
+  });
+
+  it('looks up the version again and retries once when the gate rejects it with HTTP 426', async () => {
+    const { fake } = await setup();
+    await serveRequest(fake, SESSION);
+    stableVersion.latest = '1.0.100';
+
+    expect((await failRequest(fake, SESSION, 426)).decision).toEqual({ retry: true, delay: 0 });
+    const retried = await serveRequest(fake, SESSION);
+    expect(header(retried, 'x-grok-client-version')).toBe('1.0.100');
+    expect(header(retried, 'User-Agent')).toBe(grokBuildUserAgent('1.0.100'));
+    expect((await failRequest(fake, SESSION, 426)).decision).toEqual({ retry: false });
+  });
+
+  it('retries a later HTTP 426 once the stable pointer serves a newer release', async () => {
+    const { fake } = await setup();
+    await serveRequest(fake, SESSION);
+
+    expect((await failRequest(fake, SESSION, 426)).decision).toEqual({ retry: false });
+    stableVersion.latest = '1.0.100';
+    await serveRequest(fake, SESSION);
+    expect((await failRequest(fake, SESSION, 426)).decision).toEqual({ retry: true, delay: 0 });
+    expect(header(await serveRequest(fake, SESSION), 'x-grok-client-version')).toBe('1.0.100');
   });
 
   it('leaves unrelated failures to the host retry policy', async () => {

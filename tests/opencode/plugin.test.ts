@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_CONFIG, loadConfig, saveConfig } from '../../src/config.js';
 import plugin from '../../src/opencode/plugin.js';
 import { conversationStorageKey } from '../../src/opencode/requests.js';
-import { useTempOpenCodeHome } from '../stateTestHelpers.js';
+import { useStableVersionServer, useTempOpenCodeHome } from '../stateTestHelpers.js';
 import {
   applyTransforms,
   CRED_A,
@@ -17,6 +17,7 @@ import {
 } from './fakeContext.js';
 
 const useTempHome = useTempOpenCodeHome('open-grok-build-plugin-');
+useStableVersionServer();
 const SESSION = 'ses_1';
 
 async function setup(connections: FakeConnection[] = [CRED_A]) {

@@ -157,6 +157,7 @@ OAuth credentials live in OpenCode's credential store and are never copied into 
 | `GROK_BUILD_CALLBACK_HOST` | `127.0.0.1` | OAuth callback host. |
 | `GROK_BUILD_CALLBACK_PORT` | `56122` | Preferred OAuth callback port. |
 | `GROK_BUILD_TOKEN_TIMEOUT_MS` | `30000` | OAuth request timeout in milliseconds. |
+| `GROK_BUILD_VERSION_URL` | `https://x.ai/cli/stable` | URL that returns the latest stable Grok CLI version sent with inference requests. |
 
 ## Troubleshooting
 

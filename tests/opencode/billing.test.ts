@@ -57,7 +57,7 @@ describe('billing', () => {
     expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
       authorization: 'Bearer secret-token',
       'x-xai-token-auth': 'xai-grok-cli',
-      'x-grok-client-version': '0.2.111',
+      'x-grok-client-version': '1.0.46',
       accept: 'application/json',
     });
     expect(usage).toEqual({
