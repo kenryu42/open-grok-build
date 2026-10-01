@@ -57,7 +57,7 @@ export class GrokBuildRequests {
   private readonly pendingAuthFailure = new Set<string>();
   private readonly lastFailureStatus = new Map<string, number>();
   private readonly rotationsSinceSuccess = new Map<string, number>();
-  private readonly versionRefreshedSinceSuccess = new Set<string>();
+  private readonly sentVersions = new Map<string, string>();
 
   constructor(private readonly options: RequestHooksOptions) {}
 
@@ -75,7 +75,7 @@ export class GrokBuildRequests {
     this.pendingAuthFailure.delete(sessionID);
     this.lastFailureStatus.delete(sessionID);
     this.rotationsSinceSuccess.delete(sessionID);
-    this.versionRefreshedSinceSuccess.delete(sessionID);
+    this.sentVersions.delete(sessionID);
     this.options.accounts.forgetSession(sessionID);
     await this.options.ctx.storage.remove(conversationStorageKey(sessionID));
   }
@@ -98,9 +98,9 @@ export class GrokBuildRequests {
     this.served.set(event.sessionID, account.key);
     const headers = new Headers(event.request.headers);
     headers.set('authorization', `Bearer ${token}`);
-    for (const [name, value] of Object.entries(
-      grokBuildIdentityHeaders(await resolveGrokBuildVersion()),
-    )) {
+    const version = await resolveGrokBuildVersion();
+    this.sentVersions.set(event.sessionID, version);
+    for (const [name, value] of Object.entries(grokBuildIdentityHeaders(version))) {
       headers.set(name, value);
     }
     headers.set('x-grok-model-override', event.model.id);
@@ -144,7 +144,6 @@ export class GrokBuildRequests {
     if (event.response.status === 401) this.pendingAuthFailure.add(event.sessionID);
     if (event.response.ok) {
       this.rotationsSinceSuccess.delete(event.sessionID);
-      this.versionRefreshedSinceSuccess.delete(event.sessionID);
       this.lastFailureStatus.delete(event.sessionID);
       this.options.rotation.clearChain();
       return;
@@ -181,10 +180,12 @@ export class GrokBuildRequests {
       if (await this.rotateAccount(event)) return;
     }
     const status = event.error.status ?? this.lastFailureStatus.get(event.sessionID);
-    if (status === 426 && !this.versionRefreshedSinceSuccess.has(event.sessionID)) {
-      this.versionRefreshedSinceSuccess.add(event.sessionID);
-      await refreshGrokBuildVersion();
-      event.decision = { retry: true, delay: 0 };
+    // Retry a version-gate rejection only with a newer release, which bounds the retries.
+    if (status === 426) {
+      const rejected = this.sentVersions.get(event.sessionID);
+      if (rejected !== undefined && (await refreshGrokBuildVersion()) !== rejected) {
+        event.decision = { retry: true, delay: 0 };
+      }
       return;
     }
     const rotations = this.rotationsSinceSuccess.get(event.sessionID) ?? 0;

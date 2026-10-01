@@ -210,9 +210,17 @@ describe('Grok Build session request hooks', () => {
     expect(header(retried, 'x-grok-client-version')).toBe('1.0.100');
     expect(header(retried, 'User-Agent')).toBe(grokBuildUserAgent('1.0.100'));
     expect((await failRequest(fake, SESSION, 426)).decision).toEqual({ retry: false });
+  });
 
-    await answerRequest(fake, SESSION, 200, '{}');
+  it('retries a later HTTP 426 once the stable pointer serves a newer release', async () => {
+    const { fake } = await setup();
+    await serveRequest(fake, SESSION);
+
+    expect((await failRequest(fake, SESSION, 426)).decision).toEqual({ retry: false });
+    stableVersion.latest = '1.0.100';
+    await serveRequest(fake, SESSION);
     expect((await failRequest(fake, SESSION, 426)).decision).toEqual({ retry: true, delay: 0 });
+    expect(header(await serveRequest(fake, SESSION), 'x-grok-client-version')).toBe('1.0.100');
   });
 
   it('leaves unrelated failures to the host retry policy', async () => {
